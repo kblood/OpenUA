@@ -50,8 +50,9 @@
   container check" below.
 
 Every output says what it is. Each file carries `"playable": false`, or a
-MAP-ONLY banner in the report. No runtime validation has been run on any
-slice's output. See "What is not claimed" below.
+MAP-ONLY banner in the report. One test-only AREATEST run has read and parsed
+one generated GEO file in Hatari; it did not validate a playable module or the
+full set of maps. See the all-GEO test section and "What is not claimed" below.
 
 This follows the proposal in the GoldBox repository
 (`docs/engine/research/pool-of-radiance-to-frua-module-plan.md`), adapted to
@@ -110,6 +111,12 @@ cross-checks only; none of them is used as a PoR fact.
   probe also detects a WALLDEF layout owner at `GAME.OVR:0x2EEF4`. That owner is a
   layout candidate only. No reference, caller or art binding is shown. Block-to-area,
   start area and start entry remain unknown.
+- **GEO plane-2 observer** (`tools/por_geo_plane2_observe.py`, see
+  [`por-geo-plane2-observe.md`](por-geo-plane2-observe.md)). It censuses all 29 decoded
+  GEO blocks and records per-cell descriptor-byte distributions, hashes and five labelled
+  anchors. It emits no event, zone or mapping. A PoR-specific GoldBox route and the local
+  ECL1#18 bytes are consistent with `plane2 & 0x7F` acting as one encounter selector, but
+  the native DOS producer link and an OpenUA event binding remain unestablished.
 
 The module is still map-only and unplayable. Area and start mapping are unknown, and
 events, text, art and campaign behaviour are absent.
@@ -358,6 +365,15 @@ Full notes and limits: [`por-geo-all-map-group.md`](por-geo-all-map-group.md).
   pipeline) passed for all 29 GEO files, each the engine's 12962-byte size, and each
   parses back through `geo.Geo.parse`. The run records `runtime_loaded: false` and
   `engine_executed: false`.
+- **Bounded Hatari parse run (run-e, 2026-11-17).** A separate `FRUA_AREATEST`
+  harness run used the generated `TGALLMAP.DSN/GEO001.DAT` (12,962 bytes,
+  SHA-256 `C96DFDFB743AD1967E37A36BF538EA9DF307B5D18F143F66BD7E1AB5C14B1624`).
+  Hatari 2.3.1 logged two `== GEO level1` markers with 16x16 dimensions. The
+  `FRUA_CELLSCAN` log site runs after `jt198`'s exact-size check and successful
+  `l720a` parse, so this verifies that one generated GEO file was read and
+  parsed in OpenUA. The 45-second run ended at its bound without `ERRMODAL`.
+  Build SHA-256: `B4B5620B0E29403AC01396595E4F2224F5460A8DC19A8318411415E9509B4F16`.
+  Full run setup and evidence: [`por-areatest-group19-modal.md`](por-areatest-group19-modal.md).
 - **Separate Hatari startup trace (2026-11-17, disposable stage).** Hatari 2.3.1
   executed `frua.prg` (SHA-256
   `AD786159AB110844ABA108A34BD1C875FE7B4A5795E6C03B12383494B6FDAFB8`) with a
@@ -370,10 +386,11 @@ Full notes and limits: [`por-geo-all-map-group.md`](por-geo-all-map-group.md).
   loaded or that a map was displayed. Logs and report are under
   `data/work/por-openua-runtime-allmap-smoke-20261117/` and
   `data/work/por-hatari-load-trace-review-20261117/`.
-- **Not established.** Playability; whether the engine loads or walks any block;
-  authentic area numbers, start location, facing, transitions, art, events, text or
-  monsters. The validator is a set of static host checks on the bytes, not an engine
-  run.
+- **Not established.** Playability; whether the engine loads or walks any of the
+  other 28 blocks; authentic area numbers, start location, facing, transitions,
+  art, events, text or monsters. The retail pipeline run's validator is a set of
+  static host checks. The separate Hatari parse run covers only `GEO001.DAT` and
+  does not establish any of those gameplay behaviors.
 
 ---
 
