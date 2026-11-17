@@ -25,7 +25,7 @@ misreading (see section 4); it does not yet decide anything.
 | --- | --- | --- |
 | Does the ECL classifier (`GAME.OVR:0x9379`) parse operands for 0x15 or 0x2B? | **No.** Both take its default arm: `inc [0x49ED]`, one byte, `operands_parsed: 0` | Concrete walk of the `cmp al,imm`/`jcc` chain (`classify`), checked on retail bytes |
 | Do the 0x15 and 0x2B handlers read operand bytes themselves? | **Yes, by call shape.** They push literal `3` (0x15) and `2` (0x2B) to `2B:2A` and `2B:25`, then `dec [0x49ED]` and a second `2B:2A` on a variable | Linear sweep of the handlers at `0x1C4E` and `0x1E17` |
-| Are `2B:2A` and `2B:25` resolved? | **Not established.** Zero-skew stub mapping gives `0x92C3` and `0x9196`, but both declare argument bytes the callers do not push | Stub bytes; declared `retf` and `[bp+N]` reads |
+| Are `2B:2A` and `2B:25` resolved? | **Not established.** The zero-skew model points at `0x92C3` and `0x9196`; the explicit-push shapes alone do not establish their call frames | Stub bytes; declared `retf` and `[bp+N]` reads |
 | What does `2B:2F` (index 22) resolve to? | `0x9379`, the classifier, under the zero-skew model. Its arity matches its callers (none pushed, none declared) | Same model; the arity match is the only positive evidence for it |
 | Is the classifier's caller known? | **Lead, not established.** Under the model, `2B:2F` is called at `GAME.OVR:0x40A3`, right before a call to the dispatch driver `0x3EB7`; a second caller is at `0x199B` | Byte sites |
 
@@ -119,13 +119,14 @@ plus the stub's `proc_off`, and it is not a resolution. Two checks test it again
 | Target | Declared bytes (`retf`) | Argument reads | Callers' pushes before the call | Arity |
 | --- | --- | --- | --- | --- |
 | `0x9379` (via `2B:2F`) | `retf` 0 (plain, `0x9483`) | none (no `[bp+N]`) | none emitted at `0x199B` or `0x40A3`; the call before each (`2B:34`) took the one word pushed earlier, and whether that word is popped by `2B:34` is not verified | **match** (0 = 0), conditional on that stack state |
-| `0x92C3` (via `2B:2A`) | `retf 6` (`0x9376`) | `les [bp+6]` (4-byte far pointer), `[bp+8]`, `[bp+10]` | one word, `AX` (2 bytes), from `mov al,N; push ax` | **mismatch** (6 declared, 2 pushed; far-pointer read of unpushed words) |
-| `0x9196` (via `2B:25`) | `retf 10` (`0x92C0`) | `les [bp+6]`, `[bp+10]`, `[bp+12]`, `[bp+14]` | one word, `AX` (2 bytes) | **mismatch** (10 declared, 2 pushed) |
+| `0x92C3` (via `2B:2A`) | `retf 6` (`0x9376`) | `les [bp+6]` (4-byte far pointer), `[bp+8]`, `[bp+10]` | one explicit word, `AX` (2 bytes), from `mov al,N; push ax` | **unresolved**: callee reads beyond the explicit push; caller-frame contents and INT 3Fh stack handling are not traced |
+| `0x9196` (via `2B:25`) | `retf 10` (`0x92C0`) | `les [bp+6]`, `[bp+10]`, `[bp+12]`, `[bp+14]` | one explicit word, `AX` (2 bytes) | **unresolved**: callee reads beyond the explicit push; caller-frame contents and INT 3Fh stack handling are not traced |
 
-So the zero-skew model is arity-consistent for `2B:2F` and arity-inconsistent for `2B:2A` and `2B:25`. Under the model,
-the 0x15/0x2B handlers' calls to `2B:2A` and `2B:25` do **not** land on the procedures named above with the arguments the
-handler pushes. Either the stub-to-procedure mapping differs for indices 20 and 21, or the callee reads arguments through
-a route the bytes here do not show. The bytes do not say which. No other procedure is assigned to these calls.
+The zero-skew model is shape-consistent for `2B:2F` under its observed callers. For `2B:2A` and `2B:25`, the explicit pushes
+do not cover every byte the candidate procedures read, but that is not enough to reject the targets: the caller's local
+frame and the INT 3Fh dispatch stack effect have not been followed. The menu handlers allocate local frames before these
+calls, so a caller-frame trace is needed before interpreting the extra reads as missing arguments. The bytes do not yet
+establish which procedure runs or what it does. No alternative procedure is assigned to these calls.
 
 The `2B:2F` match is one positive result, from one call shape. It is not a proof of the model; the model is still an
 assumption.
@@ -140,7 +141,8 @@ assumption.
   3 and 2" is therefore not, by itself, a contradiction in `GAME.OVR`.
 - **What is open:** (a) whether the classifier runs for 0x15/0x2B on the play path before the dispatcher (its caller is
   not tied to the ECL loop); (b) what `2B:25` and `2B:2A` do and how far they advance `[0x49ED]` (their targets are
-  unidentified, so the net advance is unknown); (c) whether the literal 3 or 2 is an element count. Until (b) is settled,
+  conditional on a stub-mapping model and their caller frames/dispatch path are not traced, so the net advance is unknown);
+  (c) whether the literal 3 or 2 is an element count. Until (b) is settled,
   the operand count of either menu is **not** established, so this doc does not choose between the `spec-menus` framing
   (3 fixed + count at 2 for `0x15`; 2 fixed + count at 1 for `0x2B`) and the conservative stop.
 - **A lead on the caller of the classifier (not established):** under the model, `2B:2F` (the classifier) is called at
@@ -153,7 +155,8 @@ assumption.
 
 - The identity of the far callees `2B:2A` and `2B:25`, and of `2B:4D` (its stub is not in the run; the probe's
   `seg_2b_calls` records that it has no stub).
-- Whether the stub-to-procedure mapping is zero-skew for indices 20 and 21 (the arity mismatch argues against it there).
+- Whether the stub-to-procedure mapping is zero-skew for indices 20 and 21. The explicit-push comparison is insufficient to
+  decide because caller-frame bytes and INT 3Fh stack handling are not modeled.
 - The stream advance of `2B:25` and `2B:2A`, and so the operand count of each menu.
 - Whether the classifier runs before the dispatcher for 0x15 and 0x2B in play, and what its caller's loop is.
 - The meaning of the stores into `[0x6F7F]` (the key) and `[0x49ED]` (the stream cell), beyond what the arms show.
@@ -165,11 +168,11 @@ The static bytes cannot close (a) to (c) above. These Hatari observations would,
 1. **Stub entry.** Break at `START.EXE` stub `0x4DA` (`2B:2A`) and `0x4D5` (`2B:25`) while the 0x15 or 0x2B handler runs.
    Record the procedure the INT 3Fh path actually enters: its load segment and offset. Then read the first three bytes
    there. If they are `55 89 E5` at the zero-skew file offset (`GAME.OVR` `0x92C3` and `0x9196` after the overlay load),
-   the zero-skew mapping holds for those indices, and the arity mismatch is in the stack shape. If they are something
-   else, the mapping differs, and the entry bytes name the real callee.
-2. **Stack at callee entry.** At the same break, read the first argument word as the entered routine sees it (expected
-   `0x0003` for 0x15 and `0x0002` for 0x2B; the INT 3Fh path's stack handling is not verified here, so the offset is not fixed). If the callee reads `[bp+6]` as a far pointer whose high word is not the literal,
-   that is direct evidence against the zero-skew target.
+   the zero-skew mapping holds for those indices; the caller-frame comparison is still needed to interpret the calls.
+   If they are something else, the mapping differs, and the entry bytes name the real callee.
+2. **Stack at callee entry.** At the same break, capture SS:SP, the caller's BP and the words around the return frame and
+   explicit pushes. Then compare the callee's `[bp+N]` reads with the caller-frame trace; the first pushed word alone does
+   not establish the complete argument block.
 3. **Classifier path.** Break at `GAME.OVR` `0x9390` and log `[0x6F7F]` (the opcode) and `[0x49ED]` before and after the
    `inc` at `0x947E`. Expect `0x15` or `0x2B` on entry and `[0x49ED]` advanced by exactly 1 when the default arm runs.
    Also log whether the call to `0x9379` comes from `0x40A3` or `0x199B` on a menu opcode.
