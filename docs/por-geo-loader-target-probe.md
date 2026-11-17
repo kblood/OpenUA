@@ -1,6 +1,7 @@
 # Pool of Radiance: the loader target 0x0802:0x0716 (observe-only)
 
-**Status: unresolved-prototype-conflict. `playable: false`. `geo_output: not_established`. `plane2_binding: not claimed`.**
+**Status: target identity is conditional; caller-frame accounting is consistent at six walked sites and unknown at four.**
+`playable: false`. `geo_output: not_established`. `plane2_binding: not claimed`.
 
 Tool: `tools/por_geo_loader_target_probe.py`. Tests: `tests/test_por_geo_loader_target_probe.py` (24 tests:
 23 synthetic with falsifiers, 1 retail-gated that also pins the positive control; all 24 pass on this run). Read-only:
@@ -9,38 +10,31 @@ it reads the pinned `GAME.OVR` and `START.EXE` and the two pinned memory dumps, 
 
 Follows [por-geo-buffer-fill-probe.md](por-geo-buffer-fill-probe.md) and
 [por-geo-copy-helper-probe.md](por-geo-copy-helper-probe.md), which left the loader
-`0x0802:0x0716` open. The question: does the loader's returned far pointer (the fill's `[bp-6]`) point at a
-decompressed GEO block?
+`0x0802:0x0716` open. Caller-frame accounting is supplemented by
+[por-geo-loader-caller-frame-probe.md](por-geo-loader-caller-frame-probe.md). The question remains whether
+the loader's returned far pointer (the fill's `[bp-6]`) points at a decompressed GEO block.
 
 ## Question and answer
 
-> Which code does the loader call `0x0802:0x0716` reach, and does that code's stack contract fit the
-> ten static call sites?
+> Which code does the call `0x0802:0x0716` reach, and what do the static caller bytes establish about its stack contract?
 
-**Answer: the target bytes are identified in START.EXE, but the identity does not hold as the loader.**
+**Answer: the target bytes conditionally match START.EXE, but execution and loader role are unproven.**
 The live call operand segment is `0x2068` (`0x0802 + 0x1866`) at the two uniquely-mapped GAME.OVR call sites
-in both dumps. The live bytes at `2068:0716` place uniquely in START.EXE at file `0x876D`. That body pops
-**18 bytes** (`retf 0x12`) and reads two far pointers at `[bp+16]` and `[bp+20]` before its first branch.
-All ten static call sites push **10 bytes**. The body's first three parameters line up with the callers
-(output far pointer at `bp+6`, status far pointer at `bp+10`, id word at `bp+14`), but the two extra far
-pointers have no caller. So the identity and the call contract conflict, and the output pointer is not
-traced to a GEO block. No plane 2 binding is claimed.
+in both dumps. The live bytes at `2068:0716` place uniquely in START.EXE at file `0x876D`. Its bytes show
+`retf 0x12` (18 cleanup bytes), while each call site explicitly pushes 10 bytes.
+That difference alone is not a prototype conflict: the supplemental caller-frame probe finds eight leftover
+bytes at six sites, including the fill site, and maps `[bp+16]`/`[bp+20]` into caller-frame buffers there.
+Four sites remain unwalked. The target identity remains conditional on the dump-derived segment mapping;
+the output pointer is not traced to a GEO block. No plane 2 binding is claimed.
 
-## Blocker (exact)
+## Caller-frame accounting (supplemental evidence)
 
-The body reads `[bp+16]` (`les di,[bp+16]` at `0x8787`, after a call) and `[bp+20]` (`les di,[bp+20]` at
-`0x8774`, the third instruction, after `sub sp,0x23E`). Under a far call with ten pushed bytes, `bp+6..bp+15` is
-the caller's push region, so `bp+16` and `bp+20` are the caller's own frame. The body then passes the
-`[bp+20]` pointer to `0x0AF8:0x0B25`, so a real call would hand that helper a pointer taken from memory the
-caller never set. Nothing in the static bytes says which of these holds at run time:
-
-1. the call at `0x2FA17` (and the other nine) does not reach `2068:0716` as the dumps suggest; or
-2. the body at `2068:0716` is not the one at START `0x876D` at the moment of the call (the dumps are of
-   unknown instant); or
-3. the callers and the body do not share one prototype, which would make the body's extra pointers a bug
-   in a shipped path.
-
-The probe cannot separate these from bytes. It reports the conflict and does not choose.
+The body reads `[bp+16]` (`les di,[bp+16]` at `0x8787`) and `[bp+20]` (`les di,[bp+20]` at `0x8774`). The first
+probe compared these offsets only with the ten explicit argument bytes and incorrectly treated the caller's
+frame as unavailable. The supplemental walk models local allocation, pushes, callee cleanup and branch joins.
+At six sites, `retf 0x12` consumes the ten explicit bytes plus eight earlier caller-pushed bytes and lands on
+the caller's allocation floor. At `0x2FA17`, the two earlier far pointers address local Pascal buffers for
+`GEO` and `.dax`. Four sites remain unknown. This is static accounting only; it does not show these calls ran.
 
 ## What the bytes establish
 
@@ -84,14 +78,15 @@ The probe cannot separate these from bytes. It reports the conflict and does not
   parameter reads and its `es`-prefixed stores; the rejected contiguous candidate.
 - **Memory-dump, unknown instant.** The live seg `0x2068` at four call operands (two per dump); the 256 live
   bytes at `2068:0716` placing at START `0x876D`; the positive control at `0xC2FB`.
-- **Derived.** The load `0x1866` (from the rewrite); the prototype conflict (from the file-byte push count
-  and the body's parameter offsets).
+- **Derived.** The load `0x1866` (from the rewrite); explicit-push comparison (caller-frame conclusions are in
+  the supplemental probe).
 - **Not established.** Everything in "Not established" below.
 
 ## Not established
 
 - That `0x0802:0x0716` runs, or that the fill or any of the ten callers runs, at any instant.
-- That the body at START `0x876D` is the loader. Its stack contract conflicts with every static caller.
+- That the body at START `0x876D` executes as the loader; its identity is conditional on an unknown-instant dump.
+- Caller-frame balance at four of the ten static sites; see the supplemental probe.
 - What the output far pointer holds at any instant, and whether it is a decoded GEO block. The body writes
   two words through `bp+6` on three paths, but the stored values are not traced, and none is tied to a
   GEO block.
@@ -105,9 +100,8 @@ The probe cannot separate these from bytes. It reports the conflict and does not
 
 The probe lists these as `next_discriminating_observations` in its JSON.
 
-1. **A live capture at the fill's loader call** (GAME.OVR `0x2FA17`, or START `0x47E0` and `0x7276`): SP
-   before the call; then CS:IP at entry (expect `2068:0716`); then the words at entry `SP+6` to `SP+23`. A
-   body that reads `SP+16` and `SP+20` as pointers would show the conflict in action.
+1. **A live capture at the fill's loader call** (GAME.OVR `0x2FA17`, or START `0x47E0` and `0x7276`): capture
+   the caller frame, SP and CS:IP to test the static stack accounting and the conditional target identity.
 2. **A byte capture of linear `0x20D96` taken at the moment of that call**, to exclude a later overwrite of
    the resident image. The two dumps are of unknown instant.
 3. **The status word and the output far pointer after the call returns**, to see which return path the
@@ -122,7 +116,8 @@ python tools/por_geo_loader_target_probe.py
 python -m pytest tests/test_por_geo_loader_target_probe.py -q
 ```
 
-- Probe: `wrote data/work/por-geo-loader-target-probe (identity=identified-by-memory-bytes-conditional-on-live-segment, prototype_match=False, status=unresolved-prototype-conflict)`, exit 0. Runs in about 0.3 s.
+- Target probe after correction: identity `identified-by-memory-bytes-conditional-on-live-segment`, explicit-push assessment `None` (caller-frame accounting required), exit 0.
+- Supplemental caller-frame probe: six of ten sites walked and balanced; four remain unknown; exit 0.
 - Tests: `24 passed` (the retail-gated test ran; no skips).
 
 ## Pins and inputs

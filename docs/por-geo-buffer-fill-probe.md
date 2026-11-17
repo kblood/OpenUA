@@ -82,7 +82,10 @@ Entry is a prologue at file `0x2F9BE` (group body `0x10C7`). It takes one byte a
 
 1. **Loader call** (`0x2FA17`, `9a 16 07 02 08`, `0x0802:0x0716`). Arguments: `mov al,[bp+6]; push ax`,
    then `lea di,[bp-2]; push ss; push di` (status out), then `lea di,[bp-6]; push ss; push di`
-   (far-pointer out). The argument pattern is checked byte by byte.
+   (far-pointer out). The argument pattern is checked byte by byte. Static caller-frame accounting shows
+   eight earlier pushed bytes at this call; the target's 18-byte cleanup reaches the caller's allocation
+   floor. See [`por-geo-loader-caller-frame-probe.md`](por-geo-loader-caller-frame-probe.md). This does not
+   establish the loader output or runtime execution.
 2. **Gate** (`0x2FA1C`): `cmp [bp-2],0; jz 0x2FA29; cmp [bp-2],0x402; jz 0x2FA57`. The `0x402`
    jump reaches the copy at `0x2FA57` directly. The other path (`0x2FA29`) makes several calls and
    then falls through to `0x2FA57`, so the copy is reached on every status value. The probe does not
@@ -191,10 +194,11 @@ The probe reports these as `next_discriminating_observations` in its JSON.
    supports `block+2`. Any other pointer falsifies it.
 3. **The id byte** pushed by each stub 7 caller (`0x1A27` and `0x1FBC4`), and the TOC block id it
    names.
-4. **The loader's call-frame conflict.** Existing dumps conditionally place the target at START
-   `0x876D`, but the body reads `[bp+16]`/`[bp+20]` and `retf 0x12` while all static callers push
-   ten bytes. A live stop at the fill's call can settle whether that is the actual body; see
-   [`por-geo-loader-target-probe.md`](por-geo-loader-target-probe.md). The copy helper's identity
+4. **Runtime loader identity and output.** Existing dumps conditionally place the target at START
+   `0x876D`; the stack accounting is statically consistent at six callers and unknown at four. A live stop
+   at the fill's call can test whether that is the actual body and what it writes; see
+   [`por-geo-loader-target-probe.md`](por-geo-loader-target-probe.md) and
+   [`por-geo-loader-caller-frame-probe.md`](por-geo-loader-caller-frame-probe.md). The copy helper's identity
    and ABI are separately documented in [`por-geo-copy-helper-probe.md`](por-geo-copy-helper-probe.md).
 5. **A dump of `DGROUP:0x6A5C`** and the 1 KiB it names, taken after an area is entered, compared with
    the four planes of the decoded blocks. The two pinned dumps are of unknown instant.

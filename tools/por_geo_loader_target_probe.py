@@ -9,9 +9,10 @@ far pointer (written to the fill's [bp-6]) would be the GEO block the copy reads
    that map uniquely to a pinned overlay group in each pinned dump. The live target bytes are then
    placed in the pinned START.EXE by a masked match: the only allowed difference is a 16-bit segment
    literal rewritten by the START load segment (file word + load). A placement must be unique.
-2. Does the body's stack contract fit the ten static call sites? Every call site's pre-call pushes are
-   read from the bytes (id word, status far pointer, output far pointer). A body whose `retf` pops a
-   different count, or which reads parameters above the pushed region, is a prototype conflict.
+2. What stack shape do the ten static call sites show? Every call site's explicit pushes are read from
+   the bytes (id word, status far pointer, output far pointer). This probe does not model the caller's
+   local frame, so a larger `retf` pop or reads above these explicit arguments are unresolved here,
+   not by themselves a prototype conflict. See `por_geo_loader_caller_frame_probe.py` for that analysis.
 3. Positive control: the same masked match, run on the copy helper's live body at 0x0AF8:0x1685,
    must place it at START 0xC2FB (the copy-helper probe's identity).
 
@@ -86,7 +87,7 @@ BRANCH_FLOWS = {"jcc", "jmp"}
 
 NOT_ESTABLISHED = [
     "that the target 0x0802:0x0716 runs, or that the fill or any caller runs, at any instant",
-    "that the identified body is the loader: its stack contract conflicts with every static caller",
+    "that the identified body is the loader: its role is conditional and caller-frame evidence is incomplete",
     "what the output far pointer holds at any instant, and whether it is a decoded GEO block",
     "the status 0x402 meaning beyond the fill's gate, and the id byte's meaning",
     "that the live segment word is the one the CPU uses at call time (the dumps are of unknown instant)",
@@ -266,27 +267,41 @@ def contract(exe: bytes, entry: int) -> dict:
 
 
 def contract_vs_callers(contr: dict, callers: list[dict]) -> dict:
-    """The body's declared pop against the bytes every caller pushes. A parameter read above the
-    pushed region is a conflict: it reads the caller's own frame, not an argument."""
+    """Compare the callee contract to explicit pushes without assuming caller-frame contents."""
     pushed = {c["pushed_bytes"] for c in callers if c.get("shape_matched")}
     pushed_region_end = 6 + (next(iter(pushed)) if len(pushed) == 1 else 0)   # bp+6 is the last push
     beyond = [d for d in contr["bp_params_read"] if d >= pushed_region_end]
     reasons = []
+    match: Optional[bool] = None
     if not pushed:
+        match = False
         reasons.append("no caller shape matched")
     elif len(pushed) > 1:
+        match = False
         reasons.append("callers push different byte counts: %s" % sorted(pushed))
-    elif contr["retf_pops_bytes"] != next(iter(pushed)):
-        reasons.append("body pops %s bytes; every caller pushes %d" % (contr["retf_pops_bytes"], next(iter(pushed))))
-    if beyond:
-        reasons.append("body reads parameters above the pushed region: bp+%s" % ", bp+".join(str(d) for d in beyond))
+    elif contr["retf_pops_bytes"] is None:
+        reasons.append("body return pop count is unknown")
+    elif contr["retf_pops_bytes"] < next(iter(pushed)):
+        match = False
+        reasons.append("body pops %s bytes, fewer than the %d explicit caller-push bytes" %
+                       (contr["retf_pops_bytes"], next(iter(pushed))))
+    elif contr["retf_pops_bytes"] == next(iter(pushed)) and not beyond:
+        match = True
+    else:
+        extra = contr["retf_pops_bytes"] - next(iter(pushed))
+        reasons.append("caller-frame accounting needed: retf consumes %d bytes beyond explicit pushes; "
+                       "parameter reads above the explicit region are bp+%s" %
+                       (extra, ", bp+".join(str(d) for d in beyond) or "none"))
     return {
         "callers_matched": sum(1 for c in callers if c.get("shape_matched")),
         "callers_total": len(callers),
         "caller_pushed_bytes": sorted(pushed),
         "body_pops_bytes": contr["retf_pops_bytes"],
+        "extra_pop_bytes_beyond_explicit_pushes": (None if not pushed or len(pushed) != 1 or
+                                                    contr["retf_pops_bytes"] is None else
+                                                    max(0, contr["retf_pops_bytes"] - next(iter(pushed)))),
         "params_read_above_pushed_region": beyond,
-        "prototype_match": not reasons,
+        "prototype_match": match,
         "reasons": reasons,
     }
 
@@ -374,8 +389,11 @@ def overall(identity: dict, prototype: dict) -> dict:
     if identity["verdict"] != "identified-by-memory-bytes-conditional-on-live-segment":
         status = "unresolved"
         blocker = "target placement not identified: %s" % identity.get("reason", identity["verdict"])
-    elif not prototype["prototype_match"]:
+    elif prototype["prototype_match"] is False:
         status = "unresolved-prototype-conflict"
+        blocker = "; ".join(prototype["reasons"])
+    elif prototype["prototype_match"] is None:
+        status = "caller-frame-accounting-required"
         blocker = "; ".join(prototype["reasons"])
     else:
         status = "contract-consistent-output-unproven"
@@ -386,8 +404,7 @@ def overall(identity: dict, prototype: dict) -> dict:
 
 DISCRIMINATORS = [
     "A live capture at the fill's loader call (GAME.OVR 0x2FA17, or the START sites at 0x47E0 and 0x7276): "
-    "SP before the call, then CS:IP at entry (expect 2068:0716), and the words at entry SP+6 to SP+23. "
-    "A read of SP+16 and SP+20 that the body uses for pointers would show the conflict in action.",
+    "record the caller frame, SP and CS:IP to test the static caller-frame accounting and the conditional target identity.",
     "A byte capture of linear 0x20D96 (2068:0716) taken at the moment of that call, to exclude a later "
     "overwrite of the resident image. The dumps are of unknown instant.",
     "A capture of the status word and the output far pointer after the call returns, to see which "
@@ -442,7 +459,7 @@ def probe(install: Path, dump_paths: list[Path]) -> dict:
     return {
         "schema": SCHEMA, "schema_version": SCHEMA_VERSION, "status_scope": STATUS_SCOPE,
         "tool": TOOL, "playable": False,
-        "question": "What does the loader 0x0802:0x0716 reach, and does its contract fit the callers?",
+        "question": "What does 0x0802:0x0716 reach, and what do the explicit caller pushes establish about its stack contract?",
         "pins": pins,
         "dumps": dumps_meta,
         "loader": {"seg": "0x%04X" % LOADER_SEG, "off": "0x%04X" % LOADER_OFF,
@@ -533,7 +550,12 @@ def render_report(doc: dict) -> str:
             "- far pointers loaded from bp: %s" % (bc["pointer_params_loaded_far"],),
             "- far calls: %s" % (", ".join(bc["far_call_targets"]) or "none"),
         ]
-    lines += ["- prototype match: %s" % pr["prototype_match"]]
+    lines += ["- explicit-push contract assessment: %s" % (
+        "consistent within this probe's limited model" if pr["prototype_match"] is True else
+        "conflict in explicit arguments" if pr["prototype_match"] is False else
+        "undetermined without caller-frame accounting")]
+    lines.append("- extra callee pop beyond explicit pushes: %s bytes" %
+                 pr.get("extra_pop_bytes_beyond_explicit_pushes", "unknown"))
     for reason in pr.get("reasons", []):
         lines.append("  - %s" % reason)
     lines += ["", "## Not established", ""]

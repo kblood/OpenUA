@@ -162,8 +162,9 @@ def test_falsifier_pop_count_conflict_is_reported():
     c = lt.contract(exe, 0x100)
     callers = [{"shape_matched": True, "pushed_bytes": 10}] * 3
     p = lt.contract_vs_callers(c, callers)
-    assert p["prototype_match"] is False
-    assert any("pops 18" in r for r in p["reasons"])
+    assert p["prototype_match"] is None
+    assert p["extra_pop_bytes_beyond_explicit_pushes"] == 8
+    assert any("caller-frame accounting needed" in r for r in p["reasons"])
 
 
 def test_falsifier_read_above_pushed_region_is_reported():
@@ -172,7 +173,7 @@ def test_falsifier_read_above_pushed_region_is_reported():
     c = lt.contract(exe, 0x100)
     callers = [{"shape_matched": True, "pushed_bytes": 10}] * 3
     p = lt.contract_vs_callers(c, callers)
-    assert p["prototype_match"] is False
+    assert p["prototype_match"] is None
     assert 20 in p["params_read_above_pushed_region"]
 
 
@@ -216,9 +217,11 @@ def test_identity_refuses_dumps_that_disagree():
 def test_overall_is_never_promoted_to_geo():
     ident = {"verdict": "identified-by-memory-bytes-conditional-on-live-segment", "file_offset": "0x876D"}
     ok = {"prototype_match": True, "reasons": []}
-    bad = {"prototype_match": False, "reasons": ["body pops 18 bytes; every caller pushes 10"]}
+    bad = {"prototype_match": False, "reasons": ["body pops fewer bytes than explicit caller pushes"]}
+    unknown = {"prototype_match": None, "reasons": ["caller-frame accounting required"]}
     assert lt.overall(ident, ok)["status"] == "contract-consistent-output-unproven"
     assert lt.overall(ident, bad)["status"] == "unresolved-prototype-conflict"
+    assert lt.overall(ident, unknown)["status"] == "caller-frame-accounting-required"
     assert lt.overall({"verdict": "unresolved", "reason": "x"}, ok)["status"] == "unresolved"
     for v in (lt.overall(ident, ok), lt.overall(ident, bad)):
         assert v["geo_output"] == "not_established" and v["plane2_binding"] == "not claimed"
@@ -253,11 +256,12 @@ def test_retail_identity_contract_and_control():
     assert doc["identity"]["file_offset"] == "0x876D"
     assert doc["body_contract"]["retf_pops_bytes"] == 18
     assert doc["body_contract"]["return_count"] == 1
-    assert doc["prototype"]["prototype_match"] is False
+    assert doc["prototype"]["prototype_match"] is None
+    assert doc["prototype"]["extra_pop_bytes_beyond_explicit_pushes"] == 8
     assert doc["prototype"]["params_read_above_pushed_region"] == [16, 20]
     assert doc["positive_control"]["passes_all"] is True
     for t in doc["target"]:
         assert [p["file_offset"] for p in t["placements"]] == [0x876D]
         assert t["contiguous_candidate"]["state"] == "memory-disagrees"
-    assert doc["verdict"]["status"] == "unresolved-prototype-conflict"
+    assert doc["verdict"]["status"] == "caller-frame-accounting-required"
     assert doc["verdict"]["geo_output"] == "not_established"
