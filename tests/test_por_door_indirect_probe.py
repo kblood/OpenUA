@@ -265,3 +265,17 @@ def test_retail_group_0x166cb_is_walked_complete():
     assert g["coverage"]["walks"] == 14
     assert g["coverage"]["walks_complete"] == 14
     assert g["ind_sites"] == []
+
+
+@needs_retail
+def test_retail_start_handler_sets_ds_before_indirect_far_call():
+    _, start, _ = dc.load_pinned(RETAIL_INSTALL)
+    trace = d.start_indirect_ds_trace(start)
+    assert trace["walk_complete"] is True
+    assert trace["bytes_match_expected_chain"] is True
+    assert trace["ds_write_between_load_and_call"] is False
+    assert trace["ax_load"]["immediate"] == 0x0C7C
+    assert trace["ds_load"]["value_if_routine_executes"] == 0x0C7C
+    assert trace["indirect_call"]["ds_displacement"] == 0x43F0
+    assert trace["table_memory_linear_if_routine_executes"] == 0x10BB0
+    assert trace["runtime_executed"] is False

@@ -13,9 +13,9 @@ Evidence classes, kept separate in the output:
      START.EXE entry point). Only class I rows are census rows.
   R  raw byte-pattern candidate: a byte pattern (FF with reg 2/3, a near word, or a far pair) that is
      not a decoded instruction start. Never counted as a caller and never as a table.
-  T  table resolution: a decoded indirect operand whose table address is resolved through a DS base
-     that the caller states. No DS base is established by this probe for any site, so no table is
-     resolved on the retail run; the resolver exists so the falsifiers can be tested.
+  T  table resolution: a decoded indirect operand whose address is resolved through a caller-stated
+     DS file base. The START handler's DS register is statically traced, but its table lives in runtime
+     memory rather than a known START file offset; overlay DS bases remain unknown.
 
 Address models for the target 0x0089C (neither promoted):
   M0  image = hdr + seg*16 + off (zero-skew; hdr = MZ header size). Target value seg*16+off = 0x069C.
@@ -213,6 +213,51 @@ def start_census(start: bytes, hdr: int) -> dict:
     }
 
 
+def start_indirect_ds_trace(start: bytes) -> dict:
+    """Decode the START interrupt handler containing the direct-DS indirect far call.
+
+    This identifies the DS value along the decoded path, conditional on the routine executing;
+    it does not establish runtime execution or the segment-to-file mapping of the table bytes.
+    """
+    entry = 0x0A9FC
+    walk = lh.walk(start, entry)
+    by_at = {row["at"]: row for row in walk["listing"]}
+    ax = by_at.get(0x0AA07)
+    ds = by_at.get(0x0AA0A)
+    call = by_at.get(0x0AA40)
+    end = by_at.get(0x0AA4D)
+    ds_writes_between = [row for row in walk["listing"] if ds and call
+                         and ds["at"] < row["at"] < call["at"]
+                         and (row["text"].startswith("lds") or row["text"].startswith("mov ds")
+                              or row["text"] == "pop ds")]
+    exact = (walk["complete"] and not ds_writes_between
+             and ax and ax["bytes"] == "b87c0c" and ax["text"] == "mov ax 0xc7c"
+             and ds and ds["bytes"] == "8ed8" and ds["text"] == "mov ds r0"
+             and call and call["bytes"] == "ff1ef043" and call["text"] == "callf [0x43f0]"
+             and end and end["text"] == "iret")
+    return {
+        "routine_file": "0x%05X" % entry,
+        "walk_complete": walk["complete"],
+        "instruction_count": len(walk["listing"]),
+        "bytes_match_expected_chain": bool(exact),
+        "ds_write_between_load_and_call": bool(ds_writes_between),
+        "ax_load": {"file": "0x0AA07", "bytes": ax["bytes"] if ax else None,
+                    "text": ax["text"] if ax else None, "immediate": 0x0C7C if exact else None},
+        "ds_load": {"file": "0x0AA0A", "bytes": ds["bytes"] if ds else None,
+                    "text": ds["text"] if ds else None,
+                    "value_if_routine_executes": 0x0C7C if exact else None},
+        "indirect_call": {"file": "0x0AA40", "bytes": call["bytes"] if call else None,
+                           "text": call["text"] if call else None,
+                           "ds_displacement": 0x43F0 if exact else None},
+        "terminator": {"file": "0x0AA4D", "bytes": end["bytes"] if end else None,
+                       "text": end["text"] if end else None},
+        "runtime_executed": False,
+        "table_memory_linear_if_routine_executes": 0x0C7C * 16 + 0x43F0 if exact else None,
+        "limitations": ["Static path only; no caller or runtime execution is established.",
+                        "DS:43F0 is runtime memory, not resolved through a START.EXE file offset."],
+    }
+
+
 def ovr_census(ovr: bytes, allg: list[dict], cache: dc.GroupCache) -> dict:
     """GAME.OVR: every owner group's stub closure and prologue sweep, plus raw FF census per group."""
     groups = []
@@ -317,7 +362,7 @@ def raw_candidates(hdr: int, files: dict[str, bytes]) -> dict:
 
 
 def table_candidates(data: bytes, ind_rows: list[dict], ds_bases: list[int], hdr: int) -> dict:
-    """T: resolve each decoded direct-DS operand through each caller-stated DS base. Empty on retail.
+    """T: resolve decoded direct-DS operands through caller-stated DS file bases.
 
     The table word is compared with the stub-1 near value under the M0 model (0x089C - hdr, base 0).
     That is one stated model, not a proof that the table is a near pointer."""
@@ -366,6 +411,7 @@ def analyse(ovr: bytes, start: bytes, ds_bases: Optional[list[int]] = None) -> d
         "stub1_decoded_reach": reach,
         "raw_candidates": raw_candidates(hdr, files),
         "table_resolution": table_candidates(start, ind_all, ds_bases or [], hdr),
+        "start_direct_ds_trace": start_indirect_ds_trace(start),
     }
 
 
@@ -379,7 +425,7 @@ def verdict(result: dict) -> dict:
         "trigger_established": established,
         "reason": ("a decoded direct or resolved indirect call reaches stub 1" if established else
                    "no decoded direct call reaches stub 1 and no decoded indirect operand resolves to it; "
-                   "table addresses need a caller-stated DS base, which the bytes here do not establish"),
+                   "the START DS value is static, but its runtime table word does not resolve to stub 1 in the dumps"),
     }
 
 
@@ -413,13 +459,14 @@ def probe(install: Path, ds_bases: Optional[list[int]] = None) -> dict:
         "evidence_classes": {
             "I": "decoded instruction start (walk reached); the only class that is a census row",
             "R": "raw byte-pattern candidate; not a caller, not a table",
-            "T": "table resolved through a caller-stated DS base; none on retail",
+            "T": "table resolved through a caller-stated DS file base; none on retail",
         },
         "analysis": result,
         "verdict": verdict(result),
         "open_edges": [
             "The trigger for stub 1 is not established by any decoded direct or indirect call here.",
-            "DS base of each indirect caller is not established; direct-DS tables cannot be read.",
+            "The START handler at 0x0A9FC loads DS=0x0C7C before callf [0x43F0], if it executes; "
+            "the runtime table word and execution are not established. DS for the overlay indirect sites remains unknown.",
             "Segment-to-file mapping at run time: the entry copies the image (rep movsb) and far-returns into it; "
             "M0 and M1 remain unproven hypotheses.",
             "Runtime execution is not observed: every row is a static decode.",
@@ -476,6 +523,15 @@ def render_report(doc: dict) -> str:
     L += ["", "## Table resolution (class T)", ""]
     tr = a["table_resolution"]
     L.append("- DS bases stated: %s; resolved decoded operands: %d" % (tr["ds_bases_stated"], len(tr["resolved"])))
+    ds = a["start_direct_ds_trace"]
+    L.append("- START handler DS trace: %s; DS `%s` before `%s`; table memory linear `%s`; runtime executed: %s" % (
+        "byte-chain-matched" if ds["bytes_match_expected_chain"] else "not-matched",
+        ("0x%04X" % ds["ds_load"]["value_if_routine_executes"])
+        if ds["ds_load"]["value_if_routine_executes"] is not None else "unknown",
+        ds["indirect_call"]["text"],
+        ("0x%05X" % ds["table_memory_linear_if_routine_executes"])
+        if ds["table_memory_linear_if_routine_executes"] is not None else "unknown",
+        ds["runtime_executed"]))
     L += ["", "## Open edges", ""] + ["- " + x for x in doc["open_edges"]] + [""]
     return "\n".join(L)
 

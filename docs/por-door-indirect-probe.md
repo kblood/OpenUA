@@ -2,15 +2,15 @@
 
 **Status: STATIC-PROBE-ONLY. `playable: false`. The trigger is NOT established.**
 Tool: [`tools/por_door_indirect_probe.py`](../tools/por_door_indirect_probe.py). Tests:
-[`tests/test_por_door_indirect_probe.py`](../tests/test_por_door_indirect_probe.py) (24 tests: 20 synthetic
-with falsifiers, 4 retail-gated; all 24 pass). Output (git-ignored):
+[`tests/test_por_door_indirect_probe.py`](../tests/test_por_door_indirect_probe.py) (25 tests: 20 synthetic
+with falsifiers, 5 retail-gated; all 25 pass). Output (git-ignored):
 `data/work/por-door-indirect-probe/por_door_indirect_probe.json` and `..._report.md`.
 
 This is the step the open edge in [por-door-caller-probe.md](por-door-caller-probe.md) asked for: stub 1 of
 group `0x166CB` (START file `0x0089C`, proc `0x0D6D` = file `0x17438`) is the only stub whose closure reaches
 the plane-3 writer `0x167D4` and clearer `0x166CB`, and no literal far call (`9A`) reaches it. The question
-here is whether an **indirect** call (`FF /2` near, `FF /3` far) can. Answer: no decoded indirect call reaches
-it, and no indirect table can be resolved from these bytes.
+here is whether an **indirect** call (`FF /2` near, `FF /3` far) can. Answer: no decoded indirect call
+resolves to it; one START table address and its dump word are now observed, but neither establishes a call.
 
 ## Pins
 
@@ -39,7 +39,9 @@ no GoldBox, no retail writes.
 7. **Stub-1 reach.** Decoded `E8` to `0x0089C`, decoded `9A` under M0 and M1. Instruction starts only.
 8. **Raw candidates** for the target `0x0089C`, under both models (below), by byte pattern only.
 9. **Table resolution (class T).** A decoded `direct-DS` operand is resolved only through a DS base the caller
-   states. None is stated on the retail run, so none is resolved.
+   states. The START handler is now statically traced: its own instructions load `DS=0x0C7C` before
+   `callf [0x43F0]`, conditional on that routine executing. This identifies a memory address, not a START file
+   offset. The overlay direct-DS sites still have no established DS value.
 
 ## Address models (neither promoted)
 
@@ -56,7 +58,7 @@ base 0 and are raw only.
 | **I** decoded instruction start | FF /2 or FF /3 reached by a walk | FF /2 near: **0**; FF /3 far: **5** |
 | **I** stub-1 reach | decoded `E8` to `0x089C`, or decoded `9A` under M0 / M1 | near **0**, M0 **0**, M1 **0** |
 | **R** raw byte pattern | not a decoded start; never a caller or table | see below |
-| **T** table resolved | decoded operand read through a stated DS base | **0** (no DS base stated) |
+| **T** table resolved | decoded operand read through a stated DS base | **0** (the START table is runtime memory; overlay DS remains unknown) |
 
 ### Class I: the five decoded `FF /3` sites (no `FF /2` site exists)
 
@@ -68,12 +70,13 @@ base 0 and are raw only.
 | `0x27ED5` | group `0x27018` (closure, fn `0x27C38`) | base-index `[di+...]` | `callf [di+27524]` |
 | `0x2AF08` | group `0x2AEEA` (closure, fn `0x2AEEA`) | base-index `[di+...]` | `callf [di+26664]` |
 
-None of the five has a DS base, and each is decoded in a walk that the stubs or prologue sweep reached. The
-operand classes are: direct-DS (3), base-index (2), bp-based (0), register (0), invalid far register (0).
+Each is decoded in a walk that the stubs or prologue sweep reached. The operand classes are: direct-DS (3),
+base-index (2), bp-based (0), register (0), invalid far register (0).
 
-The START site `0x0AA40` sits in a function that does `push ds; push es; mov ds, ax` at `0x0AA0A`. The `AX`
-value is set outside the decoded window and is not traced here, so its DS is a run-time value. The
-`[di+...]` operands take a DI value that is not traced either.
+The START site `0x0AA40` is in a complete 42-instruction function walk. It executes `mov ax,0x0C7C`
+(`B8 7C 0C`) at `0x0AA07`, `mov ds,ax` (`8E D8`) at `0x0AA0A`, then `callf [0x43F0]` (`FF 1E F0 43`).
+No instruction on this decoded path changes DS before the call; the value is `0x0C7C` if the routine executes.
+The `[di+...]` operands take DI values that are not traced.
 
 ### Class R: raw byte-pattern candidates (not callers, not tables)
 
@@ -102,18 +105,32 @@ None of the near-word hits is a decoded operand and none is in a table that a de
 ## Result, with exact evidence
 
 - **Stub 1 has no decoded direct caller** (`E8` or `9A`, under either model) in the walked code.
-- **Stub 1 has no decoded indirect caller that resolves to it.** There are 0 decoded `FF /2` sites. The 5 decoded
-  `FF /3` sites have operands that need a DS, BP, or DI base the bytes here do not establish, so no table is
-  read and nothing resolves.
-- **Verdict: `trigger_established: false`.** The indirect route is open only for the five `FF /3` sites above,
-  and only if their DS or base-index values can be fixed by a trace this probe does not do.
+- **Stub 1 has no decoded indirect caller that resolves to it.** There are 0 decoded `FF /2` sites. The START
+  `FF /3` site has a statically traced DS and its dump word does not match the M0/M1 candidates; the other four
+  sites use DS or DI bases that remain unresolved.
+- **Verdict: `trigger_established: false`.** The indirect route remains unresolved across the five `FF /3` sites;
+  the START handler's static DS and un-timed dump word do not establish an execution-linked call.
+
+## START handler DS trace and dump observation
+
+If the handler executes, its direct-DS call uses linear address
+`0x0C7C*16 + 0x43F0 = 0x10BB0`. The two existing 1 MiB dumps contain `C6 7C 00 00` there, which parses as
+far pointer `0000:7CC6`:
+
+| Dump | SHA-256 | Bytes at `0x10BB0` | Parsed value |
+|---|---|---|---|
+| `data/work/por-live-memory-pid34644/ram-000000-100000.bin` | `f8191750ea6c672ecf649eac86d6dc3efa15766bb50f73ad6f2f68f27dea4895` | `C6 7C 00 00` | `0000:7CC6` |
+| `data/work/por-wheel-live-capture/ram-000000-100000.bin` | `3788787cd795f1f5e433edcfbfa2fb5f05258c57bfbe0d06de400742570516fa` | `C6 7C 00 00` | `0000:7CC6` |
+
+This is a memory-dump observation only; neither dump shows that the handler ran or when the word was written.
+The observed far pointer does not match the base-zero stub-1 candidates `0000:069C` (M0) or `0000:081E`
+(M1). Since M0 and M1 remain hypotheses, this does not establish the indirect trigger.
 
 ## What is not established
 
-1. **The DS base** of the START caller `0x0AA40` and of the group `0x27018` / `0x2AEEA` callers. The DS load at
-   `0x0AA0A` takes its value from `AX`, whose source is not decoded here. The entry's `push cs; pop ds`
-   (`0xF937`-`0xF938`) sets DS only for the startup code, not for these functions.
-2. **The table contents** at DS `0x43F0` and `0x6B84`. They cannot be read without (1).
+1. **Handler execution and table meaning.** Static bytes set DS at `0x0AA40`, but no observation shows this
+   handler executes or that `DS:0x43F0` is an active dispatch entry at that time.
+2. **Overlay DS** at `0x6B84` in group `0x27018` / `0x2AEEA`; these values remain untraced.
 3. **The run-time segment mapping.** The entry copies a block with `rep movsb` and `retf`s to `seg:0x38` (the
    pushed segment comes from `AX`, set earlier in the startup), so the segment for file `0x0089C` is not fixed by
    these bytes. M0 and M1 remain unproven, and neither the
@@ -135,12 +152,9 @@ OPENUA_POR_INSTALL="C:/Modding/OpenUA/data/work/por-geo-run/POOLRAD" \
 
 ## Next step
 
-Static, no emulator: trace the DS value at the one START caller that has a direct-DS operand. Find the callers
-of the START function `0x0A9FC` (decoded `E8` and `9A` sites, both already in the census), and decode what
-`AX` holds at `0x0AA0A` on each path. If that fixes DS, read the table word at `DS:0x43F0` and check it against
-the M0 and M1 near values `0x069C` and `0x081E`. The overlay sites (`DS:0x6B84`) need their own DS trace.
-Only a table word that equals a stub-1 value, reached through a traced DS, would establish the indirect
-trigger. A live capture is still blocked by copy protection (see
+Next, trace the far-call targets that can enter this interrupt handler and identify the owner of the
+`0000:7CC6` target in the dumps. The overlay sites (`DS:0x6B84`) need their own DS trace. Only an execution-
+linked table value resolving to stub 1 would establish the indirect trigger. A live capture is still blocked by copy protection (see
 [por-wall-runtime-capture-attempt.md](por-wall-runtime-capture-attempt.md)).
 
 ## Limits
