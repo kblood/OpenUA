@@ -72,6 +72,12 @@ cross-checks only; none of them is used as a PoR fact.
   `0x2D` arm calls it. Its far callees are fixup-listed, and the fixup delta is not
   established, so none is mapped. Whether the dispatch key `[DS:0x6F7F]` is the ECL
   opcode byte is not established. Opcode semantics are not assigned.
+- **ECL menu framing (0x15/0x2B)** (`tools/por_ecl_menu_framing_probe.py`, see
+  [`por-ecl-menu-framing-probe.md`](por-ecl-menu-framing-probe.md)). The pinned
+  classifier defaults both opcodes to a one-byte advance with zero classifier-parsed
+  operands. Their handlers also push 3 and 2 to far helpers `2B:2A` and `2B:25`,
+  whose targets and stream advances remain unresolved. These facts do not yet define
+  the menu framing or assign opcode semantics.
 - **Overlay fixup loader entry** (`tools/por_ecl_fixup_entry_probe.py`, see
   [`por-ecl-fixup-entry-probe.md`](por-ecl-fixup-entry-probe.md)). The INT 3Fh install
   and handler chain in `START.EXE` (file `0xA7CB`..`0xAAC0`) is byte-checked. Its
