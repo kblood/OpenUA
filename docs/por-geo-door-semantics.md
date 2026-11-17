@@ -1,6 +1,6 @@
 # Pool of Radiance GEO door semantics: evidence and gaps
 
-**Status: CENSUS-ONLY. No door rule is proven. `tools/por_map.py` is unchanged.**
+**Status: CENSUS + STATIC TRACE. No door rule is proven. `tools/por_map.py` is unchanged.**
 This note audits the converter's edge mapping for door flags (plane 3) and asks
 whether any branch can be made exact enough to change emitted OpenUA behaviour.
 It cannot, on the evidence available. The tool added with this note,
@@ -94,7 +94,25 @@ a runtime capture). It reports four routines that touch the plane-3 field:
 - `GAME.OVR:0x2EC47` (4 sites) reads plane 3 at `+0x300`, gated on Y.
 
 The same doc says the fill routine `0x2F9BE` is where the buffer is built, and
-it records no field accessor inside that fill. That is all it establishes.
+it records no field accessor inside that fill. A follow-up static caller probe
+([`por-door-caller-probe.md`](por-door-caller-probe.md)) adds these bounded
+findings:
+
+- The setter `0x167D4` and clearer `0x166CB` are in the same well-formed group.
+  Decoded in-group calls to both are found in the closure of stub 1, whose
+  START target is `0x089C` / proc `0x0D6D` / GAME.OVR file `0x17438`.
+- No direct far-call literal to that stub is found under either reported
+  address model. The event that enters this group, and therefore what makes
+  the setter or clearer run, remains unidentified.
+- The reader `0x2EC47` returns a 2-bit plane-3 field. Four candidate far-call
+  sites are decoder-verified and fixup-listed. Their following instructions
+  compare the result with 0, 1 or 3, but the compared branch arms are not
+  decoded far enough to assign gameplay meaning.
+
+The probe's address model is conditional: one dump-backed anchor supports the
+`+0x7E` model at one reader site, while the writer/clearer group is absent from
+both pinned dumps. These findings are caller and branch-shape evidence only;
+they do not establish an event, a movement check, or a door rule.
 
 Two readings follow from the bytes, and neither is proven. First, PoR code
 **writes** the value `01` into a door field, so `01` is a state the game
@@ -150,8 +168,9 @@ value opens does not exist yet.
 ## Decision
 
 No change to `tools/por_map.py`. No falsification test is added for a mapping
-branch, because no branch was changed. The tests added with this note cover
-the census tool only (`tests/test_por_geo_door_census.py`).
+branch, because no branch was changed. The census tests are in
+`tests/test_por_geo_door_census.py`; the caller-trace tests are in
+`tests/test_por_door_caller_probe.py`.
 
 ## Limits
 
@@ -165,20 +184,17 @@ the census tool only (`tests/test_por_geo_door_census.py`).
 
 ## Next discriminating observation
 
-Static, no DOSBox needed: find every caller of `GAME.OVR:0x167D4` (the
-set-to-`01` writer) and of `0x166CB` (the clearer), and name the event each
-belongs to.
+The direct-caller step is complete; its result is documented in
+[`por-door-caller-probe.md`](por-door-caller-probe.md). The remaining static
+lead is to census indirect near/far calls in `GAME.OVR` and `START.EXE` and
+resolve tables or variables that could enter stub 1 at START `0x089C` / file
+`0x17438`. The probe finds no direct far-call literal under its two address
+models, so this search may leave the trigger unresolved.
 
-- If `0x167D4` is reached from a bash/pick/knock success path, then `01` means
-  "opened/unlocked" in PoR, which would support the flag-1 passage rule and
-  show that the 2/3 locked cases use another path. That is supporting
-  evidence only, not proof.
-- If it is reached from a secret-door discovery routine, the converter's
-  "secret door" reading gains real support, and the message text is a
-  candidate for PoR's own string.
-- If it has no caller, or is reached only from an unrelated routine, the door
-  mapping stays unresolved and that is a result too.
-
-Then identify the consumer of the `0x2EC47` plane-3 read. If it gates the
-forward move, its result for a flag-1 edge decides the passage question
-directly.
+Even if the trigger is found, the mapping still needs the branch behavior of
+the reader's callers. A live capture of the resident overlay at those branches
+could pair the returned 2-bit field with a movement result, but the current
+runtime route is blocked at copy protection (see
+[`por-wall-runtime-capture-attempt.md`](por-wall-runtime-capture-attempt.md)).
+Until one of those observations identifies the event and passage effect, all
+mapping branches stay hypotheses.
