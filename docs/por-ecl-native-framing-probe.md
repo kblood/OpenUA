@@ -10,7 +10,9 @@ conflict, and the unexplained stops above `0x40`), [por-ecl-menu-framing-probe.m
 (the `0x15`/`0x2B` default arm and the zero-skew model), [por-ecl-opcode2d-probe.md](por-ecl-opcode2d-probe.md)
 (the `0x2D` handler reads `[0x7086]`/`[0x7046]`), [por-ecl-length-xref.md](por-ecl-length-xref.md) (the `0x80`
 count byte), and [por-ecl-handler-cursor-probe.md](por-ecl-handler-cursor-probe.md) (the dispatcher's separate
-stream loop and the `0x1B` handler). This probe takes its facts from `GAME.OVR` and `START.EXE` bytes only. The
+stream loop and the `0x1B` handler), and [por-ecl-entry-origin-probe.md](por-ecl-entry-origin-probe.md) (the
+PoR-derived header-table boundary and its conditional block-byte link). This probe takes its facts from `GAME.OVR`
+and `START.EXE` bytes only. The
 GoldBox Pool dispatch map was read as a clue: its operand-parser address `0x74d3` is the same address the PoR bytes
 give here, but nothing here depends on that agreement and no CoAB opcode semantics are used.
 
@@ -40,6 +42,7 @@ remain open. The probe does not force a complete table; the open terms are writt
 | Are there other parser callers? | Yes, **13** near call sites: the 8 classifier arms, and five class-1 calls in the routine at `0x7689`. The earlier docs describe the parser's caller as far-only; this refines that. Near callers of `0x7689` itself: none. Whether `0x7689` runs is not established | Walk of `0x7689`; `near_call_candidates` returns no caller |
 | Does the dispatcher use this classifier/parser path? | **Not established; the decoded direct-call evidence separates them.** The dispatcher loop at `0x3EB7` calls `0x3C73`, but does not call `0x9379` or `0x74D3`. The classifier has no direct caller in the scanned bytes; parser callers are its class arms and `0x7689`, which has no direct caller | [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md), bounded caller walks |
 | What does the `0x1B` handler do to the cursor? | `inc [0x49ED]` occurs before any branch; one guard path ends at +1, while the other calls unresolved `0x002B:0x008E`. This agrees with the classifier's one-byte arm only on the settled path | [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md), bounded path walk |
+| Is block byte 22 established as the instruction origin? | **No.** PoR code parses five header records from vaddr `0x9900` to `0x9914`; the two-byte loader skip and all 29 retail blocks are consistent with that table ending at byte 22. The loader source and copy behavior are unresolved, and the VM takes an entry vaddr from a slot | [`por-ecl-entry-origin-probe.md`](por-ecl-entry-origin-probe.md) |
 
 ---
 
@@ -229,6 +232,8 @@ Local result: `19 passed` with the variable set; `18 passed, 1 skipped` without 
 - No runtime claim. Reachability of the classifier path, of the `0x7689` routine, and of any opcode is not established.
 - The dispatcher loop's decoded body calls the dispatcher directly and does not call the classifier/parser. The scan
   found no direct classifier caller; indirect or table-driven entry is not excluded.
+- Block offset 22 is a PoR-derived candidate table boundary, not an established instruction origin. The source record
+  and copy-helper behavior that would tie the loaded buffer to block byte 0 are unresolved.
 - No operand or opcode meaning. No FRUA event mapping, no module, no campaign or route claim.
 - No opcode semantics from any other game. The GoldBox dispatch map was read as a clue and is not used for any number here.
 - The `0x80` unpacker's advance (`X`) and the `0x87CE` far callees' cursor effect are open.

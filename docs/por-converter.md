@@ -86,6 +86,11 @@ cross-checks only; none of them is used as a PoR fact.
   `0x002B:0x008E`; the whole effect remains open. The dispatcher loop does not call
   the classifier directly, so the 12-byte stream prefix is only a classifier-model
   diagnostic and is not established as the live stream boundary.
+- **ECL entry origin** (`tools/por_ecl_entry_origin_probe.py`, see
+  [`por-ecl-entry-origin-probe.md`](por-ecl-entry-origin-probe.md)). PoR code parses
+  five class-1 header records from vaddr `0x9900` to `0x9914`; retail bytes are
+  consistent with that table ending at block offset 22. The loader's source and copy
+  behavior are unresolved, and the VM's instruction origin is not established.
 - **Overlay fixup loader entry** (`tools/por_ecl_fixup_entry_probe.py`, see
   [`por-ecl-fixup-entry-probe.md`](por-ecl-fixup-entry-probe.md)). The INT 3Fh install
   and handler chain in `START.EXE` (file `0xA7CB`..`0xAAC0`) is byte-checked. Its
