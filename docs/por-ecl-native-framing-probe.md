@@ -9,9 +9,10 @@ Companions (read, not changed): [por-ecl-decoder.md](por-ecl-decoder.md) (the `s
 conflict, and the unexplained stops above `0x40`), [por-ecl-menu-framing-probe.md](por-ecl-menu-framing-probe.md)
 (the `0x15`/`0x2B` default arm and the zero-skew model), [por-ecl-opcode2d-probe.md](por-ecl-opcode2d-probe.md)
 (the `0x2D` handler reads `[0x7086]`/`[0x7046]`), [por-ecl-length-xref.md](por-ecl-length-xref.md) (the `0x80`
-count byte). This probe takes its facts from `GAME.OVR` and `START.EXE` bytes only. The GoldBox Pool dispatch map was
-read as a clue: its operand-parser address `0x74d3` is the same address the PoR bytes give here, but nothing here
-depends on that agreement and no CoAB opcode semantics are used.
+count byte), and [por-ecl-handler-cursor-probe.md](por-ecl-handler-cursor-probe.md) (the dispatcher's separate
+stream loop and the `0x1B` handler). This probe takes its facts from `GAME.OVR` and `START.EXE` bytes only. The
+GoldBox Pool dispatch map was read as a clue: its operand-parser address `0x74d3` is the same address the PoR bytes
+give here, but nothing here depends on that agreement and no CoAB opcode semantics are used.
 
 ---
 
@@ -21,10 +22,11 @@ depends on that agreement and no CoAB opcode semantics are used.
 > that framing stop being established?
 
 **Partly.** The classifier's per-opcode class (the operand count for 213 of 256 opcode values is "none", and 43 values
-have a class) and the parser's per-operand byte rules are established by the bytes. What is not established: the
-byte effect of the two string/post-step helpers the parser calls for some tags, the handler-level reads of the menu
-opcodes, and whether the classifier path runs at all for a given opcode in play. The probe does not force a complete
-table; the open terms are written into each row.
+have a class) and the parser's per-operand byte rules are established by the bytes. A separate bounded trace now
+shows that the decoded dispatcher loop does not call this classifier, and no direct caller of the classifier was
+found in the scanned images. So these are rules of the classifier/parser code, not an established framing of the
+dispatcher loop's live stream. The byte effect of the parser's string/post-step helpers and handler-level reads also
+remain open. The probe does not force a complete table; the open terms are written into each row.
 
 | Question | Answer | Basis |
 | --- | --- | --- |
@@ -36,6 +38,8 @@ table; the open terms are written into each row.
 | Is the operand framing closed for every tag? | **No.** Two kinds are open: `0x80` count `> 0` (unpacker `0x8626`: far calls, cursor refs) and `0x81` (post-step `0x87CE`: far calls). `X` and the `0x87CE` cursor effect are not established | Helper census; far calls are literal `0x0AF8:xxxx`, fixup-listed in the existing docs |
 | What are the menu opcodes' operands? | **Not established by the classifier**: both are default-arm (one byte). Their handlers call `2B:2A`/`2B:25`, whose zero-skew targets `0x92C3`/`0x9196` do **not** call the parser or the classifier and do not touch the cursor cell directly. `0x9196` has 21 far call sites | Callers census; menu helper census |
 | Are there other parser callers? | Yes, **13** near call sites: the 8 classifier arms, and five class-1 calls in the routine at `0x7689`. The earlier docs describe the parser's caller as far-only; this refines that. Near callers of `0x7689` itself: none. Whether `0x7689` runs is not established | Walk of `0x7689`; `near_call_candidates` returns no caller |
+| Does the dispatcher use this classifier/parser path? | **Not established; the decoded direct-call evidence separates them.** The dispatcher loop at `0x3EB7` calls `0x3C73`, but does not call `0x9379` or `0x74D3`. The classifier has no direct caller in the scanned bytes; parser callers are its class arms and `0x7689`, which has no direct caller | [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md), bounded caller walks |
+| What does the `0x1B` handler do to the cursor? | `inc [0x49ED]` occurs before any branch; one guard path ends at +1, while the other calls unresolved `0x002B:0x008E`. This agrees with the classifier's one-byte arm only on the settled path | [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md), bounded path walk |
 
 ---
 
@@ -223,6 +227,8 @@ Local result: `19 passed` with the variable set; `18 passed, 1 skipped` without 
 ## Not claimed
 
 - No runtime claim. Reachability of the classifier path, of the `0x7689` routine, and of any opcode is not established.
+- The dispatcher loop's decoded body calls the dispatcher directly and does not call the classifier/parser. The scan
+  found no direct classifier caller; indirect or table-driven entry is not excluded.
 - No operand or opcode meaning. No FRUA event mapping, no module, no campaign or route claim.
 - No opcode semantics from any other game. The GoldBox dispatch map was read as a clue and is not used for any number here.
 - The `0x80` unpacker's advance (`X`) and the `0x87CE` far callees' cursor effect are open.
@@ -241,12 +247,14 @@ Local result: `19 passed` with the variable set; `18 passed, 1 skipped` without 
 
 ## Next evidence that would settle it
 
-1. **Run-time capture** of the parser entry `0x74D3` and of the stub index 2 (`0x47B`) during an ECL walk: the class byte
+1. **Static entry trace:** resolve indirect or table-driven entries to the classifier or parser. The dispatcher loop at
+   `0x3EB7` does not call them directly, so a classifier rule should not be applied to its stream without an entry path.
+2. **Run-time capture** of the parser entry `0x74D3` and of the stub index 2 (`0x47B`) during an ECL walk: the class byte
    pushed and the cursor before and after. That tests the classifier-to-parser path and the operand framing together.
-2. **The far callees** of `0x8626` and `0x87CE` (literal `0x0AF8:xxxx`): their resolved bodies decide `X` and the cursor
+3. **The far callees** of `0x8626` and `0x87CE` (literal `0x0AF8:xxxx`): their resolved bodies decide `X` and the cursor
    effect of the `0x81` post-step. Needs the fixup delta, which is still open.
-3. **The menu helpers** `0x9196` and `0x92C3`: a walk of their own stream reads (their 21 and 2 far calls) would show
+4. **The menu helpers** `0x9196` and `0x92C3`: a walk of their own stream reads (their 21 and 2 far calls) would show
    whether they parse the operands the `0x15`/`0x2B` handlers then read.
-4. **Who runs `0x7689`**: its five class-1 parses would store decoded words at `0x49E3`–`0x49EB`. A byte census of
+5. **Who runs `0x7689`**: its five class-1 parses would store decoded words at `0x49E3`–`0x49EB`. A byte census of
    `[0x49E3]`–`[0x49EB]` readers (the `0x49EB` cell is also pushed at `0x40AD` in the dispatch driver, per the menu doc)
    would connect it to a caller.

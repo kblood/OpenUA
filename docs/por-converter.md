@@ -80,6 +80,12 @@ cross-checks only; none of them is used as a PoR fact.
   operands. Their handlers also push 3 and 2 to far helpers `2B:2A` and `2B:25`,
   whose targets and stream advances remain unresolved. These facts do not yet define
   the menu framing or assign opcode semantics.
+- **ECL dispatcher cursor (`0x1B`)** (`tools/por_ecl_handler_cursor_probe.py`, see
+  [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md)). The handler
+  increments the cursor once before branching, but one path calls unresolved
+  `0x002B:0x008E`; the whole effect remains open. The dispatcher loop does not call
+  the classifier directly, so the 12-byte stream prefix is only a classifier-model
+  diagnostic and is not established as the live stream boundary.
 - **Overlay fixup loader entry** (`tools/por_ecl_fixup_entry_probe.py`, see
   [`por-ecl-fixup-entry-probe.md`](por-ecl-fixup-entry-probe.md)). The INT 3Fh install
   and handler chain in `START.EXE` (file `0xA7CB`..`0xAAC0`) is byte-checked. Its
@@ -100,6 +106,11 @@ cross-checks only; none of them is used as a PoR fact.
   have raw sizes that are multiples of 780 (5 x 156), read from the TOC. No renderer
   caller, slot-to-8X8D index, set or bank, or relocation is established. No wall is
   mapped.
+- **START 8X8D layout candidate** (`tools/por_8x8d_loader_probe.py`, see
+  [`por-8x8d-loader-probe.md`](por-8x8d-loader-probe.md)). The routine at `0x7180`
+  is an EGA rectangle fill with no pixel-source operand, and its bounded decoded
+  caller chain selects no 8X8D block or tile. The adjacent `8X8d1` literal remains
+  a layout-only candidate; no archive or tile binding is established.
 - **Group-29 WALLDEF target** (`tools/por_wall_group29_target_probe.py`, see
   [`por-wall-group29-target-probe.md`](por-wall-group29-target-probe.md)). The one
   runtime run observed a `0x2E8F7` seek and `0x120B`-byte read. The `33E7:05FD`

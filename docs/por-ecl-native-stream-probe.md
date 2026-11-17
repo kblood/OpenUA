@@ -5,9 +5,10 @@
 Tool: `tools/por_ecl_native_stream_probe.py`. Tests: `tests/test_por_ecl_native_stream_probe.py` (46 tests:
 44 synthetic, 2 retail-gated on `OPENUA_POR_INSTALL`).
 
-Companions (read, not changed): [por-ecl-native-framing-probe.md](por-ecl-native-framing-probe.md) (the framing
-evidence this tool uses, and nothing else for framing), [por-ecl-decoder.md](por-ecl-decoder.md) (the DAX container,
-RLE and 22-byte header, validated on retail `ECL2.DAX`), [por-ecl-menu-framing-probe.md](por-ecl-menu-framing-probe.md),
+Companions (read, not changed): [por-ecl-native-framing-probe.md](por-ecl-native-framing-probe.md) (the static
+classifier/parser framing this tool uses), [por-ecl-handler-cursor-probe.md](por-ecl-handler-cursor-probe.md) (the
+separate dispatcher loop and its `0x1B` handler), [por-ecl-decoder.md](por-ecl-decoder.md) (the DAX container, RLE
+and 22-byte header, validated on retail `ECL2.DAX`), [por-ecl-menu-framing-probe.md](por-ecl-menu-framing-probe.md),
 [por-ecl-opcode2d-probe.md](por-ecl-opcode2d-probe.md).
 
 ---
@@ -17,16 +18,20 @@ RLE and 22-byte header, validated on retail `ECL2.DAX`), [por-ecl-menu-framing-p
 > Walking one retail ECL block from its header end, how far can the walk go using only the record boundaries the
 > pinned PoR-native framing supports, and where does it have to stop?
 
-**The walk stops at block offset 34.** The first two records cover **12 of 7,657** stream bytes. The next byte is
-opcode `0x1B`, which the classifier advances by one byte but which also has a PoR dispatcher case. Since the
-handler's additional cursor effect is unknown, the tool stops before it and reports no later offsets. The `0x80`
-counted-string and `0x81` post-step paths remain open, but this block's conservative walk does not reach them.
+**Under this static classifier/parser model, the walk stops at block offset 34.** The first two records cover **12 of
+7,657** stream bytes. The next byte is opcode `0x1B`, which the classifier advances by one byte. A separate trace of
+the PoR dispatcher found no direct caller of the classifier: its loop reads the stream byte and calls the dispatcher
+directly. The `0x1B` handler itself increments the cursor before branching, but one path calls unresolved
+`0x002B:0x008E`. Therefore the 12-byte prefix is a diagnostic boundary under the classifier model, not an established
+boundary of the dispatcher's live stream. The `0x80` counted-string and `0x81` post-step paths also remain open.
 
 | Question | Answer | Basis |
 | --- | --- | --- |
 | Which opcode classes and operand kinds are used? | Only the framing probe's JSON: 43 classified opcodes, 213 default-arm opcodes, five operand kinds that tile the tag/value space | `por_ecl_native_framing_probe.py` JSON, 25/25 checks |
 | What does a classified record advance by? | `1 + sum(delta_i)`: the opcode byte, then each operand's 2 or 3 bytes. Operand `i`'s tag is at cursor+1 | Probe's operand-kind table (cursor delta = read extent, checked in code) |
 | What does a default-arm opcode advance by? | The classifier increments the cursor once. For default opcodes with a `0x3C73` dispatch case, the overall handler cursor effect is unresolved, so the stream walk stops before that opcode | Probe classifier and dispatch list |
+| Is the classifier shown on the dispatcher's call path? | **No.** The dispatcher loop at `0x3EB7` calls `0x3C73` without calling classifier `0x9379`; the classifier has no direct caller in scanned bytes. The framing path's reachability is unestablished | [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md) |
+| Does the `0x1B` handler settle the cursor? | It increments once before any branch. One path ends at +1; the guard-zero path calls unresolved `0x002B:0x008E`, so the full effect remains open | [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md) |
 | Where does the walk stop? | Before an operand of an OPEN kind: tag `0x81`, or tag `0x80` with count `> 0`. Or before a truncated operand. Or at the end of the stream | Probe's `open` flags |
 | Is the program boundary known? | **No.** The walk never claims completion; `claims.complete` is always `false` | Not established: EXIT/RETURN semantics, handler reads, X |
 
@@ -146,7 +151,8 @@ Local results after the conservative handler-stop correction: **`44 passed, 2 sk
 ## Limitations
 
 - **Only a small prefix is boundary-supported.** The 12 bytes are conditional on the inherited header-end stream
-  origin and on the classifier path being used. No handler boundary is crossed.
+  origin and on the classifier/parser model. The dispatcher is not shown to call that classifier, so this is not an
+  established live-stream prefix. No handler boundary is crossed by this walk.
 - **Open operand paths remain unresolved.** The X effect of `0x8626` and the post-step of `0x87CE` are open (framing
   probe, section 2); block 20's conservative walk stops earlier and does not make a claim about its later `0x80` bytes.
 - **Default-arm handler reads.** Dispatch-case defaults (including `0x15` and `0x2B`) may consume more bytes. The walk
@@ -168,8 +174,10 @@ Local results after the conservative handler-stop correction: **`44 passed, 2 sk
 
 ## Next evidence that would settle it
 
-1. Resolve the far callees of `0x8626` and `0x87CE` (`0x0AF8:xxxx`). Their cursor effect decides the framing of
+1. Resolve whether the classifier/parser is entered through an indirect or table-driven path. The dispatcher loop at
+   `0x3EB7` does not call it directly; until the path is found, the classifier-based walk remains a separate model.
+2. Resolve the far callees of `0x8626` and `0x87CE` (`0x0AF8:xxxx`). Their cursor effect decides the framing of
    open operands if earlier handler boundaries are resolved and the walk reaches them.
-2. Find handler-level reads and cursor writes for dispatch-case defaults, starting with `0x1B` (IF_GE), `0x16` (IF_EQ),
-   and `0x15`/`0x2B` (the menu opcodes). This can extend the boundary-supported prefix.
-3. Pin the entry cursor and the `0x6700` displacement, so the stream origin stops being inherited.
+3. Resolve the open `0x1B` helper path and find handler-level reads/cursor writes for `0x16`, `0x15` and `0x2B`.
+   This can extend the classifier-based boundary only if its entry path is established.
+4. Pin the entry cursor and the `0x6700` displacement, so the stream origin stops being inherited.
