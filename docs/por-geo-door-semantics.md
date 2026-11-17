@@ -186,8 +186,10 @@ branch, because no branch was changed. The census tests are in
 - Census counts stored bytes. It says nothing about passability.
 - Shared-edge agreement measures consistency only.
 - The executable evidence is a static decode. No routine was shown to be the
-  movement check, and no runtime capture was made. The runtime path is blocked
-  by copy protection (`docs/por-wall-runtime-capture-attempt.md`).
+  movement check, and no gameplay movement or door capture was made. A bounded
+  startup INT 3Fh capture exists, but it reaches a `retf` no-op and does not
+  enter the gameplay path. The interactive runtime path is blocked by copy
+  protection (`docs/por-wall-runtime-capture-attempt.md`).
 - The `slot S` texture group is still unverified against WALLDEF.
 - Other titles (GoldBox, CoK, COAB) are hypothesis only.
 
@@ -195,12 +197,15 @@ branch, because no branch was changed. The census tests are in
 
 The direct and bounded indirect-call censuses are complete; their results are
 in [`por-door-caller-probe.md`](por-door-caller-probe.md) and
-[`por-door-indirect-probe.md`](por-door-indirect-probe.md). The next static
-lead is to trace the DS value at START function `0x0A9FC` and read its indirect
-far-call operand at DS:`0x43F0`; the overlay operands at DS:`0x6B84` need their
-own DS trace. A resolved pointer to stub 1 would identify the trigger path, but
-would still not establish the writer's gameplay event or the reader branches'
-movement effect.
+[`por-door-indirect-probe.md`](por-door-indirect-probe.md). The startup DS lead
+at START function `0x0A9FC` has since been checked at runtime (see
+[`por-int3f-live-dispatch.md`](por-int3f-live-dispatch.md)): after relocation,
+`DS=0x14A0`, `DS:0x43F0` contains `E5 02 C6 12`, and the far call reaches
+`12C6:02E5`, whose first byte is `retf`. This is a startup no-op, not a door
+trigger. The overlay operands at `DS:0x6B84` still need their own DS trace, and
+the indirect probe did not resolve them. Even a resolved pointer to stub 1
+would identify only a trigger path; it would not establish the writer's
+gameplay event or the reader branches' movement effect.
 
 Even if the trigger is found, the mapping still needs the branch behavior of
 the reader's callers. A live capture of the resident overlay at those branches
