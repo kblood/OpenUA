@@ -1,6 +1,6 @@
 # Pool of Radiance GEO door semantics: evidence and gaps
 
-**Status: CENSUS + STATIC TRACE. No door rule is proven. `tools/por_map.py` is unchanged.**
+**Status: CENSUS + STATIC TRACES. No door rule is proven. `tools/por_map.py` is unchanged.**
 This note audits the converter's edge mapping for door flags (plane 3) and asks
 whether any branch can be made exact enough to change emitted OpenUA behaviour.
 It cannot, on the evidence available. The tool added with this note,
@@ -114,6 +114,15 @@ The probe's address model is conditional: one dump-backed anchor supports the
 both pinned dumps. These findings are caller and branch-shape evidence only;
 they do not establish an event, a movement check, or a door rule.
 
+A second static probe ([`por-door-indirect-probe.md`](por-door-indirect-probe.md))
+searched decoded instruction starts for indirect entries into the writer/clearer
+stub. It found 0 `FF /2` near calls and 5 `FF /3` far calls across the walked
+PoR image. None resolves to the target under the two unpromoted address models;
+the five operands need DS or DI values that the probe does not establish. The
+GAME.OVR walk covers 94.6% of group-body bytes, and 8,654 bytes outside groups
+are not walked, so this is not proof that no caller exists. The trigger remains
+unknown.
+
 Two readings follow from the bytes, and neither is proven. First, PoR code
 **writes** the value `01` into a door field, so `01` is a state the game
 produces and not only a stored value. Second, the same code clears fields, so
@@ -184,12 +193,14 @@ branch, because no branch was changed. The census tests are in
 
 ## Next discriminating observation
 
-The direct-caller step is complete; its result is documented in
-[`por-door-caller-probe.md`](por-door-caller-probe.md). The remaining static
-lead is to census indirect near/far calls in `GAME.OVR` and `START.EXE` and
-resolve tables or variables that could enter stub 1 at START `0x089C` / file
-`0x17438`. The probe finds no direct far-call literal under its two address
-models, so this search may leave the trigger unresolved.
+The direct and bounded indirect-call censuses are complete; their results are
+in [`por-door-caller-probe.md`](por-door-caller-probe.md) and
+[`por-door-indirect-probe.md`](por-door-indirect-probe.md). The next static
+lead is to trace the DS value at START function `0x0A9FC` and read its indirect
+far-call operand at DS:`0x43F0`; the overlay operands at DS:`0x6B84` need their
+own DS trace. A resolved pointer to stub 1 would identify the trigger path, but
+would still not establish the writer's gameplay event or the reader branches'
+movement effect.
 
 Even if the trigger is found, the mapping still needs the branch behavior of
 the reader's callers. A live capture of the resident overlay at those branches
