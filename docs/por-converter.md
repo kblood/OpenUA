@@ -50,10 +50,10 @@
   container check" below.
 
 Every output says what it is. Each file carries `"playable": false`, or a
-MAP-ONLY banner in the report. Test-only AREATEST runs have now read and parsed
-generated GEO001 and GEO029 files in Hatari; they do not validate a playable
-module or the full set of maps. See the all-GEO test section and "What is not
-claimed" below.
+MAP-ONLY banner in the report. A test-only AREATEST sweep has now read and
+parsed all 29 generated GEO files through OpenUA's real loader in Hatari. It
+does not validate a playable module or the maps' authored behavior. See the
+all-GEO test section and "What is not claimed" below.
 
 This follows the proposal in the GoldBox repository
 (`docs/engine/research/pool-of-radiance-to-frua-module-plan.md`), adapted to
@@ -384,6 +384,16 @@ Full notes and limits: [`por-geo-all-map-group.md`](por-geo-all-map-group.md).
   `BBD3E236FF9A3DA3497167D48A56D265A781ED6EFD7959B91C1641B7C350C01C` was
   verified afterward. Capture: `data/work/por-openua-areatest-20261117e/DBG-area29-retry.LOG`.
   This adds one more test-file parse, not a sweep of all 29 maps.
+- **One-run all-GEO Hatari sweep (2026-11-17).** The opt-in
+  `FRUA_GEO_SWEEPTEST` harness loaded GEO001..GEO029 through `jt198` in one
+  bounded run: `loaded 29 skipped 0 failed 0`. Each returned successfully from
+  the same loader path that checks the exact engine byte count and parses with
+  `l720a`; the harness then reloaded entry area 1 and logged that it continued
+  into `jt948`. The test-only ids remain invented and the sweep does not walk
+  or execute events in those maps. Executable SHA-256:
+  `367717BEED5E9AEE562EFAFD62221E9F7A99E5BA524F0E268BB6038CB92D4AE9`.
+  Capture and harness limits: [`por-geo-sweeptest.md`](por-geo-sweeptest.md),
+  `data/work/por-openua-areatest-geosweep-run/DBG-geosweep.LOG`.
 - **Separate Hatari startup trace (2026-11-17, disposable stage).** Hatari 2.3.1
   executed `frua.prg` (SHA-256
   `AD786159AB110844ABA108A34BD1C875FE7B4A5795E6C03B12383494B6FDAFB8`) with a

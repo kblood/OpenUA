@@ -22922,6 +22922,73 @@ static void frua_spilltest(void)
 }
 #endif /* FRUA_BWMODE && FRUA_SPILLTEST */
 
+#ifdef FRUA_GEO_SWEEPTEST
+/* FRUA_GEO_SWEEPTEST (test-only, opt-in, needs FRUA_AREATEST): load every
+ * GEO001..GEO029 of the current design through the REAL jt198 loader, one
+ * bounded run, then reload the configured entry level and jt948 as usual.
+ * The area numbers are invented test-only ids (the TGALLMAP fixture), not an
+ * authentic area mapping. See docs/por-geo-sweeptest.md. */
+#define FRUA_GEO_SWEEP_FIRST 1
+#define FRUA_GEO_SWEEP_LAST  29
+#define FRUA_GEO_SWEEP_CELLS 576    /* MAP chunk 0xd80 = 576 cells x 6 bytes */
+
+/* Existence probe that mirrors jt127's first path (the direct
+ * "<design>:GEO%03d.dat" open, flags 0). jt127 falls through to the .glb
+ * lookup and then the cold disk load (jt987), which retries rather than
+ * failing when the file is absent, so the sweep must not call jt198 for a
+ * file that is not there. jt398 returns 0 for its NULL / '%' early-outs, which
+ * is never a real GEMDOS file handle, so only refnum > 0 counts as present. */
+static int frua_geo_sweep_present(short n)
+{
+	char  path[402];
+	char  dpath[202];
+	short refnum;
+
+	jt394(path, "%s%03d.dat", "GEO", (int)(unsigned char)n);
+	dpath[0] = 0;
+	jt431(dpath, &g_a5_31336);
+	jt431(dpath, path);
+	refnum = jt398(dpath, 0);
+	if (refnum <= 0)
+		return 0;
+	(void)jt411(refnum);
+	return 1;
+}
+
+/* Read-only report on the map jt198 just parsed. jt198 returning at all means
+ * its byte-count and l720a checks passed (on failure it calls jt69, which
+ * exits), so this only re-checks the header dimensions before trusting them. */
+static int frua_geo_sweep_check(short n)
+{
+	char                 msg[96];
+	const unsigned char *lv =
+	    (const unsigned char *)(uintptr_t)g_a5_long(-12300);
+	long                 w, h, cells, specials = 0, id;
+
+	if (lv == NULL) {
+		jt394(msg, "GEO-SWEEP area %03d FAIL: map pointer NULL", (int)n);
+		dbg_log(msg);
+		return 0;
+	}
+	w     = lv[2];                 /* ds[2] = width  (col limit) */
+	h     = lv[3];                 /* ds[3] = height (row limit) */
+	cells = w * h;
+	if (w <= 0 || h <= 0 || cells > FRUA_GEO_SWEEP_CELLS) {
+		jt394(msg, "GEO-SWEEP area %03d FAIL: bad dims w=%d h=%d",
+		      (int)n, (int)w, (int)h);
+		dbg_log(msg);
+		return 0;
+	}
+	for (id = 0; id < cells; id++)
+		if (lv[290 + id * 6 + 4] != 0)   /* cell special byte, as in jt198 */
+			specials++;
+	jt394(msg, "GEO-SWEEP area %03d: width %d height %d cells %d specials %d",
+	      (int)n, (int)w, (int)h, (int)cells, (int)specials);
+	dbg_log(msg);
+	return 1;
+}
+#endif
+
 void frua_areatest_entry(void)
 {
 	port_test_seed_design();
@@ -23015,6 +23082,63 @@ void frua_areatest_entry(void)
 #endif
 #if defined(FRUA_BWMODE) && defined(FRUA_SPILLTEST)
 	frua_spilltest();                       /* #160: run + log, then play on */
+#endif
+#ifdef FRUA_GEO_SWEEPTEST
+	{
+		char          msg[96];
+		/* The configured entry level (GAME001.DAT byte 48 via g_a5_18878)
+		 * and the party cell are captured before the sweep, because jt198
+		 * overwrites the live map and the restore must put them back. */
+		short         configured = (short)g_a5_18878;
+		unsigned char px = g_a5_12288, py = g_a5_12287, pf = g_a5_12286;
+		short         n, loaded = 0, skipped = 0, failed = 0;
+
+		dbg_log("GEO-SWEEP begin: test-only, invented area ids 1..29");
+		jt394(msg, "GEO-SWEEP configured entry level %03d", (int)configured);
+		dbg_log(msg);
+		if (!frua_geo_sweep_present(configured)) {
+			/* No restore target: stop before touching the live map. */
+			jt394(msg, "GEO-SWEEP abort: GEO%03d.DAT absent; "
+			      "jt948 not entered", (int)configured);
+			dbg_log(msg);
+			return;
+		}
+		for (n = FRUA_GEO_SWEEP_FIRST; n <= FRUA_GEO_SWEEP_LAST; n++) {
+			jt394(msg, "GEO-SWEEP area %03d begin", (int)n);
+			dbg_log(msg);
+			if (!frua_geo_sweep_present(n)) {
+				jt394(msg, "GEO-SWEEP area %03d skip: GEO%03d.DAT absent",
+				      (int)n, (int)n);
+				dbg_log(msg);
+				skipped++;
+				continue;
+			}
+			/* jt198 never returns on a bad byte count or parse reject: it
+			 * logs "jt198: GEO bytes = " or "jt198: l720a reject", then
+			 * jt69 -> ExitToShell. The begin marker above names the area. */
+			jt198(n);
+			if (frua_geo_sweep_check(n))
+				loaded++;
+			else
+				failed++;
+			jt394(msg, "GEO-SWEEP area %03d end", (int)n);
+			dbg_log(msg);
+		}
+		jt394(msg, "GEO-SWEEP loop done: loaded %d skipped %d failed %d",
+		      (int)loaded, (int)skipped, (int)failed);
+		dbg_log(msg);
+
+		/* Restore: a fresh jt198 of the configured level, the same load a
+		 * normal entry makes, then the saved party cell. */
+		jt198(configured);
+		g_a5_12288 = px;
+		g_a5_12287 = py;
+		g_a5_12286 = pf;
+		jt394(msg, "GEO-SWEEP restore: entry level %03d reloaded, party cell "
+		      "%d,%d facing %d", (int)configured, (int)px, (int)py, (int)pf);
+		dbg_log(msg);
+		dbg_log("GEO-SWEEP end: continuing into jt948");
+	}
 #endif
 	jt948();
 }
