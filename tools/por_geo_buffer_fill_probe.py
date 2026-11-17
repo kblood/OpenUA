@@ -20,10 +20,11 @@ Everything here is read from bytes. The probe:
 6. Optionally tests the decoded pinned GEO blocks (tools/por_map.py) against RAM dumps. A positive
    control (START stub bytes, known to be in the pid34644 dump) shows the search works.
 
-What it does NOT establish, and reports as unresolved: the identity and calling convention of
-0x0AF8:0x1685 (copy direction), the identity and return value of the loader 0x0802:0x0716 (block
-base), the meaning of the id byte, that any caller or the fill executes, and the live buffer
-contents at any instant. It never claims plane 2 is bound to the callee's read.
+The companion copy-helper probe identifies 0x0AF8:0x1685 and its ABI in pinned dumps; the loader
+target probe conditionally matches 0x0802:0x0716 to START bytes but finds a stack-prototype conflict.
+This probe itself does not establish that either routine is reached at runtime, what the loader
+returns, whether its output is a GEO block, the meaning of the id byte, or the buffer contents at
+any instant. It never claims plane 2 is bound to the callee's read.
 
 Usage:
     python tools/por_geo_buffer_fill_probe.py [--install PATH/TO/POOLRAD] \
@@ -71,8 +72,8 @@ PLANE_BYTES = 0x100
 BUF_SIZE = 0x400
 ALLOC_SIZE = 0x400
 ALLOC_CALL = bytes.fromhex("9a 3f 02 f8 0a")     # call 0x0AF8:0x023F (allocator; retf 2 candidate)
-COPY_CALL = bytes.fromhex("9a 85 16 f8 0a")     # call 0x0AF8:0x1685 (copy; convention unproved)
-LOAD_CALL = bytes.fromhex("9a 16 07 02 08")     # call 0x0802:0x0716 (loader; unidentified)
+COPY_CALL = bytes.fromhex("9a 85 16 f8 0a")     # call 0x0AF8:0x1685 (ABI in por_geo_copy_helper_probe)
+LOAD_CALL = bytes.fromhex("9a 16 07 02 08")     # call 0x0802:0x0716 (candidate; prototype conflict)
 LES_PTR = bytes.fromhex("c4 3e 5c 6a")          # les di,[0x6a5c]
 STORE_AX = bytes.fromhex("a3 5c 6a")            # mov [0x6a5c],ax
 STORE_DX = bytes.fromhex("89 16 5e 6a")         # mov [0x6a5e],dx
@@ -86,15 +87,16 @@ WINDOW = 16
 POSITIVE_CONTROL_LEN = 16
 
 NOT_ESTABLISHED = [
-    "the identity and calling convention of 0x0AF8:0x1685: which pushed pointer is the source and which "
-    "the destination is decided by the reading of the pushes, not by the callee's bytes",
-    "the identity of the loader 0x0802:0x0716, and that the far pointer it writes to [bp-6] is a GEO block base",
+    "that the fill reaches the dump-identified helper 0x0AF8:0x1685 at runtime",
+    "that the loader call 0x0802:0x0716 reaches the candidate START body at 0x876D: the live-byte match "
+    "is conditional on the observed segment, and that body's stack contract conflicts with all ten static callers",
+    "what the loader writes through [bp-6], or whether the output pointer names a GEO block",
     "that the loader's status word 0x402 is a byte count (1026, the Gen1 block size) rather than a code",
     "the meaning of the id byte the fill passes to the loader (its TOC block id, area number or other)",
     "that the fill function (GAME.OVR 0x2F9BE) runs, or that either caller runs, at any instant",
     "that the live buffer at DGROUP 0x6A5C holds any GEO block at any instant (no dump shows it)",
     "that plane 2 (buffer +0x200) is the byte the callee returns: only the copy geometry is decoded",
-    "any segment-base model for the 0x0AF8 and 0x0802 selectors (the image mapping is a candidate only)",
+    "a general segment-base model beyond the per-site dump observations in the copy-helper and loader-target probes",
 ]
 
 Refusal = om.Refusal
@@ -495,7 +497,8 @@ def unresolved_writers(doc: dict) -> list[dict]:
     out = []
     for c in fill["copies"]:
         out.append({"writer": c.get("call_at"), "writes": c.get("dst"),
-                    "unresolved": "copy direction and source-pointer identity (0x0AF8:0x1685, 0x0802:0x0716)"})
+                    "unresolved": "whether the loader output is a GEO block and whether this fill executes; "
+                                  "copy-helper ABI is documented by por_geo_copy_helper_probe"})
     for r in doc["les_sites"]:
         if r["access"] and r["access"]["kind"] == "write":
             out.append({"writer": r["les_hex"], "writes": "plane disp %s" % (
@@ -531,19 +534,20 @@ def probe(install: Path, out: Path, dump_paths: list[Path]) -> dict:
         "not_established": NOT_ESTABLISHED,
         "next_discriminating_observations": [
             "At the copy call (GAME.OVR 0x2FA70, 0x2FA92, 0x2FAB4, 0x2FAD6) in a live run, record the five pushed "
-            "words and the 0x100 bytes at each side before and after. A dst that matches the src bytes falsifies "
-            "the reading with dst pushed second, and a dst that equals the pushed src falsifies it the other way.",
+            "words and the 0x100 bytes at each side before and after. The helper ABI probe says first far pointer is "
+            "source and second is destination; this capture checks that the fill reaches that helper and copies those bytes.",
             "At the return of the loader call (GAME.OVR 0x2FA17), record the status word at [bp-2] and the far "
             "pointer at [bp-6]. Status 0x402 and a pointer whose 1026 bytes decode to a pinned GEO block "
             "(tools/por_map.py) together support block+2; any other pointer falsifies it.",
             "Record the id byte the caller pushes (stub 7 literal 03D5:0043, sites 0x1A27 and 0x1FBC4) and the "
             "TOC block id it names. The id is not decoded past its source byte.",
-            "Decode the resident routines 0x0AF8:0x1685 and 0x0802:0x0716 once their segment mapping is established "
-            "(see docs/por-ecl-target-probe.md): the expected copy convention is retf 0x0A for a three-argument copy.",
+            "Resolve the loader-target prototype conflict from docs/por-geo-loader-target-probe.md with a live capture "
+            "at 0x2FA17. The target bytes conditionally match START 0x876D, but its retf 0x12 and bp+16/bp+20 reads "
+            "conflict with the ten bytes pushed by each static call site.",
             "Dump DGROUP 0x6A5C through 0x6A5E and the 1 KiB it names at a known point after an area is entered, "
             "then compare the four planes with the decoded GEO blocks. The two pinned dumps are of unknown instant.",
         ],
-        "verdict": "fill not established; copy geometry decoded from bytes; source and direction unresolved",
+        "verdict": "fill not established; copy geometry and dump-backed helper ABI are documented; loader/output remain unresolved",
     })
     return doc
 

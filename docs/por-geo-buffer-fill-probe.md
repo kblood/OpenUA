@@ -35,9 +35,10 @@ What the bytes establish (file-byte control and dataflow):
   block size in `tools/por_map.py`. That is a structural match, not proof the loader returns a GEO
   block.
 
-What stays unproved (see "Not established"): what the loader `0x0802:0x0716` is, whether its
-returned pointer is a GEO block, and what id byte it is given. No dump shows GEO plane bytes at the
-buffer, and nothing executes.
+What stays unproved (see "Not established"): whether the conditional target match for
+`0x0802:0x0716` is the body called at runtime (its stack contract conflicts with all ten static
+call sites), whether its returned pointer is a GEO block, and what id byte it is given. No dump
+shows GEO plane bytes at the buffer, and nothing executes.
 
 ## Allocation (file bytes)
 
@@ -148,9 +149,10 @@ running buffer is drawn from them.
 - **Memory-dump byte observation.** The positive control at `0x1C3E4` (both dumps). No GEO plane
   window in either dump.
 - **Unproved (recorded, not used).** Whether the dump-identified `0x0AF8:0x1685` helper is reached by
-  the fill at runtime; the identity of `0x0802:0x0716` and whether `[bp-6]` is a GEO block; the meaning of the id; the meaning of the
-  `0x49D2` pointer; whether the fill or either caller runs; the value of the buffer at any instant;
-  the meaning of `0x402` beyond being 1026.
+  the fill at runtime; whether the candidate START body at `0x876D` is the loader called as
+  `0x0802:0x0716` (its stack contract conflicts with the static callsites); whether `[bp-6]` is a GEO
+  block; the meaning of the id; the meaning of the `0x49D2` pointer; whether the fill or either caller
+  runs; the value of the buffer at any instant; the meaning of `0x402` beyond being 1026.
 
 ## Chain: buffer to plane 2
 
@@ -160,14 +162,15 @@ running buffer is drawn from them.
 | Only the fill writes planes 0 to 2 | established for literal addressing of `0x6A5C`: no `les` site writes those planes. Indirect access to the slot is not excluded | a field accessor that writes `+0x000..+0x200` |
 | Fill copies `block+2+256k` to `buf+256k`, count `0x100`, for `k=0..3` | established by bytes (the symbolic walk) | a changed cursor immediate (tested) or a missing push (tested) |
 | Copy `src` is the first pushed pointer | **established by the exact helper bytes, conditional on dump-backed identity** | a call target at `0x0AF8:0x1685` whose bytes/ABI differ from START `0xC2FB` |
-| `BLK` is the loader's pointer and a 1026-byte GEO block | **not established**: loader unidentified | a live `[bp-6]` whose 1026 bytes are not a decoded GEO block |
+| `BLK` is the loader's pointer and a 1026-byte GEO block | **not established**: target bytes conditionally match START `0x876D`, but its call frame conflicts with every static caller | a live `[bp-6]` whose 1026 bytes are not a decoded GEO block |
 | `buf + 0x200` is GEO plane 2 (`block + 514`) | **not established** until the loader pointer is tied to a GEO block | a live buffer whose `+0x200` plane differs from the decoded plane 2 of the block the loader returned |
 | `0x2EE71` returns `buf + 0x200 + 16Y+X` | established by bytes (the callee probe) | a read path that is not the one listed |
 
 ## Not established
 
 - That the fill executes or that its call reaches the dump-identified helper at `0x0AF8:0x1685`.
-- The identity of the loader `0x0802:0x0716`, and that its `[bp-6]` pointer is a GEO block base.
+- Whether the live-byte candidate at START `0x876D` is the loader body reached by `0x0802:0x0716`; its
+  stack contract conflicts with all ten static call sites. The `[bp-6]` output is not tied to a GEO block.
 - That the status `0x402` means a byte count. The match with 1026 is a consistency check only.
 - The meaning of the id byte (from `[bp-3]` or `es:[49D2+0x18A]`) and which TOC block it names.
 - That the fill or either caller executes, or is reachable from entry.
@@ -188,9 +191,11 @@ The probe reports these as `next_discriminating_observations` in its JSON.
    supports `block+2`. Any other pointer falsifies it.
 3. **The id byte** pushed by each stub 7 caller (`0x1A27` and `0x1FBC4`), and the TOC block id it
    names.
-4. **The unresolved loader** `0x0802:0x0716`, once its segment mapping is established (see
-   `docs/por-ecl-target-probe.md`). The copy helper's identity and ABI have a separate dump-backed
-   result in [`por-geo-copy-helper-probe.md`](por-geo-copy-helper-probe.md).
+4. **The loader's call-frame conflict.** Existing dumps conditionally place the target at START
+   `0x876D`, but the body reads `[bp+16]`/`[bp+20]` and `retf 0x12` while all static callers push
+   ten bytes. A live stop at the fill's call can settle whether that is the actual body; see
+   [`por-geo-loader-target-probe.md`](por-geo-loader-target-probe.md). The copy helper's identity
+   and ABI are separately documented in [`por-geo-copy-helper-probe.md`](por-geo-copy-helper-probe.md).
 5. **A dump of `DGROUP:0x6A5C`** and the 1 KiB it names, taken after an area is entered, compared with
    the four planes of the decoded blocks. The two pinned dumps are of unknown instant.
 

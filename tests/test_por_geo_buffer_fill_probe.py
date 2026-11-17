@@ -238,3 +238,6 @@ def test_retail_probe_never_claims_fill_or_plane_two(tmp_path):
     assert doc["fill_established"] is False
     assert doc["plane2_binding"] == "not claimed"
     assert doc["playable"] is False
+    assert "copy direction unresolved" not in doc["verdict"]
+    assert any("helper ABI probe" in s for s in doc["next_discriminating_observations"])
+    assert any("prototype conflict" in s for s in doc["next_discriminating_observations"])

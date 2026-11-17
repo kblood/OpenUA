@@ -164,4 +164,5 @@ Dumps (both `ram-000000-100000.bin`, base 0; labelled by folder in the output):
    and the 256 bytes before and after. A match of `src` to the copied bytes confirms the direction.
 2. A live capture of the fill's call at `GAME.OVR 0x2FA70` (the fill group `0x2E8F7` must be resident), to
    confirm the call runs and the group's seg word is `0x235E`.
-3. The loader `0x0802:0x0716` (see the buffer-fill doc), to see whether `[bp-6]` is the block the copy reads.
+3. Resolve the loader call-frame conflict and tie its `[bp-6]` output to a GEO block; see
+   [`por-geo-loader-target-probe.md`](por-geo-loader-target-probe.md) and the buffer-fill doc.
