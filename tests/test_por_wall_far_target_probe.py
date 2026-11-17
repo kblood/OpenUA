@@ -262,6 +262,51 @@ def test_masked_match_is_delta_consistent_only():
     assert p.resolve_masked(raw, off, D, ogm.Dump(bytes(dump2), 0), files)["status"] == "masked-absent"
 
 
+def _module_relocation_fixture(delta=D):
+    exe = bytearray(0xAD5F + p.WINDOW + 16)
+    window = bytearray((i * 13 + 7) & 0xFF for i in range(p.WINDOW))
+    window[:10] = bytes.fromhex("33 c9 33 db ba 7c 0c 8e da fb")
+    exe[0xAD5F:0xAD5F + p.WINDOW] = window
+    live = bytearray(window)
+    live[5:7] = struct.pack("<H", (0x0C7C + delta) & 0xFFFF)
+    linear = ((0x0AF8 + delta) & 0xFFFF) * 16 + 0x00E9
+    dump1 = bytearray(DUMP_SIZE)
+    dump2 = bytearray(DUMP_SIZE)
+    dump1[linear:linear + p.WINDOW] = live
+    dump2[linear:linear + p.WINDOW] = live
+    return bytes(exe), bytes(dump1), bytes(dump2), linear
+
+
+def test_module_helper_accepts_only_the_relocated_ds_segment_immediate():
+    exe, dump1, dump2, _ = _module_relocation_fixture()
+    files = {p.EXE_NAME: exe, p.OVR_NAME: bytes(0x100)}
+    result = p._followup_target(0x0AF8, 0x00E9, exe, files,
+                                [("one", dump1, 0), ("two", dump2, 0)], D)
+    assert result["status"] == "module-base-relocated-segment-immediate-match"
+    assert result["file_offset"] == "0xAD5F"
+    assert result["raw_segment_immediate"] == "0x0C7C"
+    assert result["expected_live_segment_immediate"] == "0x0D7C"
+    assert all(row["status"] == "relocated-immediate-match" for row in result["dump_checks"])
+
+
+@pytest.mark.parametrize("mutation", ["wrong-delta", "other-byte", "consumer-opcode"])
+def test_module_helper_relocation_falsifiers(mutation):
+    exe, dump1, dump2, linear = _module_relocation_fixture()
+    dumps = [bytearray(dump1), bytearray(dump2)]
+    if mutation == "wrong-delta":
+        dumps[0][linear + 5:linear + 7] = struct.pack("<H", 0x0D7D)
+    elif mutation == "other-byte":
+        dumps[1][linear + 12] ^= 1
+    else:
+        exe_mut = bytearray(exe)
+        exe_mut[0xAD5F + 8] = 0xC2  # MOV ES,DX, not MOV DS,DX
+        exe = bytes(exe_mut)
+    files = {p.EXE_NAME: exe, p.OVR_NAME: bytes(0x100)}
+    result = p._followup_target(0x0AF8, 0x00E9, exe, files,
+                                [("one", bytes(dumps[0]), 0), ("two", bytes(dumps[1]), 0)], D)
+    assert result["status"] == "module-base-not-cross-checked"
+
+
 def test_exact_window_in_two_files_is_ambiguous_not_unique():
     ovr, exe, owner, bb, cb = build()
     rows = p.descriptor_table(exe, ovr)
@@ -357,7 +402,18 @@ def test_retail_far_targets_match_documented_facts():
                and r["mapping"]["file_offset"] == "0xB6B5" for r in helpers)
     assert mapped("0428:002A", 1, "0A32:000B", "0x4778")["mapping"]["file_offset"] == "0xA024"
     assert mapped("0428:002A", 2, "0A32:00A2", "0x8BD3")["mapping"]["file_offset"] == "0xA0BB"
-    assert mapped("0428:002A", 1, "0AF8:00E9", "0x89C7")["mapping"]["status"] == "module-base-not-cross-checked"
+    module_item = mapped("0428:002A", 1, "0AF8:00E9", "0x89C7")
+    module_helper = module_item["mapping"]
+    assert module_helper["status"] == "module-base-relocated-segment-immediate-match"
+    assert module_helper["file_offset"] == "0xAD5F"
+    assert module_helper["raw_segment_immediate"] == "0x0C7C"
+    assert module_helper["expected_live_segment_immediate"] == "0x24E2"
+    assert module_item["conditional_closure"]["instructions_decoded"] == 188
+    assert module_item["conditional_closure"]["indirect_calls_not_followed"] == 1
+    # The closure walker marks this INT's AH as unknown; the local pinned bytes
+    # set AH=25 immediately before push DS / LDS DX,[DI] / INT 21h.
+    start = (Path(INSTALL) / "START.EXE").read_bytes()
+    assert start[0xADD5:0xADDC] == bytes.fromhex("b4 25 1e c5 15 cd 21")
     assert all(r.get("conditional_closure", {}).get("int21_file_hits", 0) == 0
                for r in follow if "conditional_closure" in r)
     assert all(r.get("conditional_closure", {}).get("string_token_candidates", 0) == 0

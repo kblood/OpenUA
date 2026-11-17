@@ -40,8 +40,9 @@ What it does (each step's output is labelled, never merged):
   7. Bounded closure. Only at a target resolved under the consensus delta, the callee probe's closure
      is decoded from the resolved file offset. Reported as CONDITIONAL on the consensus delta.
   8. Bounded far-call follow-up. From those conditional closures, follow at most three more far-call
-     hops. A target is accepted only through the conditional 0x0AF8 module base or a unique exact/masked
-     file window reproduced by every dump. Every descendant remains conditional; no call execution is inferred.
+     hops. A target is accepted only through the conditional 0x0AF8 module base (exact bytes or the
+     specifically checked relocated DS immediate) or a unique exact/masked file window reproduced by
+     every dump. Every descendant remains conditional; no call execution is inferred.
 
 Kept apart in every output:
   * owner evidence       the owner group's own bytes and fixups (static);
@@ -101,6 +102,7 @@ SWEEP_EXAMPLES = 8
 STUB_DISTS = (0x16, 0x17)            # header -> first stub, both scored (por_farcall_resolve model)
 STUB_LEN = 5
 MODULE_BASE = 0xAC76               # conditional 0x0AF8 -> START placement, anchored by copy-helper probe
+RELOCATED_SEGMENT_HELPER = (0x00E9, 0xAD5F, 5)
 FOLLOWUP_DEPTH = 3                  # bound: owner target closure, then at most three far-call hops
 
 CLAIMS = {
@@ -384,12 +386,65 @@ def closure_at(data: bytes, root: int) -> dict:
             "selection_reached": v["selection_reached"]}
 
 
+def _module_relocated_segment_match(off: int, exe: bytes, files: dict[str, bytes],
+                                    dumps: list[tuple[str, bytes, int]], delta: int) -> Optional[dict]:
+    """Cross-check the one observed 0AF8 helper whose code contains a relocated DS immediate.
+
+    This narrow recognizer requires the pinned START byte shape `mov dx,imm16; mov ds,dx` at
+    the established module offset. It accepts only when both dump windows match every other
+    byte and the immediate equals the file immediate plus the candidate segment delta.
+    """
+    helper_off, file_off, immediate_rel = RELOCATED_SEGMENT_HELPER
+    if off != helper_off:
+        return None
+    window = exe[file_off:file_off + WINDOW]
+    expected_prefix = bytes.fromhex("33 c9 33 db ba")
+    expected_consumer = bytes.fromhex("8e da")  # mov DS,DX immediately after the immediate
+    if (len(window) != WINDOW or window[:5] != expected_prefix
+            or window[7:9] != expected_consumer):
+        return {"status": "module-base-not-cross-checked", "reason": "pinned helper shape mismatch"}
+    raw_value = int.from_bytes(window[immediate_rel:immediate_rel + 2], "little")
+    target_value = (raw_value + delta) & 0xFFFF
+    rows = []
+    for name, data, base in dumps:
+        relative = (((0x0AF8 + delta) & 0xFFFF) * PARA + off) - base
+        if relative < 0 or relative > len(data) - WINDOW:
+            rows.append({"dump": name, "status": "outside-dump"})
+            continue
+        live = data[relative:relative + WINDOW]
+        immediate = int.from_bytes(live[immediate_rel:immediate_rel + 2], "little")
+        matches = (live[:immediate_rel] == window[:immediate_rel]
+                   and live[immediate_rel + 2:] == window[immediate_rel + 2:]
+                   and immediate == target_value)
+        rows.append({"dump": name, "status": "relocated-immediate-match" if matches else "mismatch",
+                     "live_immediate": "0x%04X" % immediate,
+                     "other_bytes_match": (live[:immediate_rel] == window[:immediate_rel]
+                                           and live[immediate_rel + 2:] == window[immediate_rel + 2:])})
+    complete = len(rows) == len(dumps) and bool(rows) and all(
+        row["status"] == "relocated-immediate-match" for row in rows)
+    unique = ogm.classify_target(window, files)
+    matched = complete and unique.get("status") == "unique-START.EXE" \
+        and unique["hits"].get(EXE_NAME) == [_hex(file_off)]
+    return {"status": "module-base-relocated-segment-immediate-match" if matched
+            else "module-base-not-cross-checked",
+            "basis": "conditional 0x0AF8 module base; only MOV DX,imm16 changes by delta and feeds MOV DS,DX",
+            "file": EXE_NAME, "file_offset": _hex(file_off), "exact_window": unique.get("status"),
+            "live_window_matches_all_dumps_except_relocated_immediate": matched,
+            "immediate_relative_offset": "0x%X" % immediate_rel,
+            "raw_segment_immediate": "0x%04X" % raw_value,
+            "expected_live_segment_immediate": "0x%04X" % target_value,
+            "dump_checks": rows, "candidate_bytes": window.hex(" ")}
+
+
 def _followup_target(seg: int, off: int, exe: bytes, files: dict[str, bytes],
                      dumps: list[tuple[str, bytes, int]], delta: int) -> dict:
-    """Map one nested far target only when module-base or exact/masked dump evidence agrees."""
+    """Map one nested far target only with module-base, exact, masked, or pinned relocation evidence."""
     linear = (((seg + delta) & 0xFFFF) * PARA + off)
     if seg == 0x0AF8:
         file_off = MODULE_BASE + off
+        relocated = _module_relocated_segment_match(off, exe, files, dumps, delta)
+        if relocated is not None:
+            return relocated
         window = exe[file_off:file_off + WINDOW]
         exact = ogm.classify_target(window, files) if len(window) == WINDOW else {"status": "out-of-file"}
         live_match = all(data[linear - base:linear - base + WINDOW] == window
@@ -461,7 +516,9 @@ def followup_far_calls(closures: list[dict], exe: bytes, ovr: bytes,
                     "raw_target": "%04X:%04X" % (site["seg"], site["off"]),
                     "mapping": target}
             output.append(item)
-            if target["status"] in ("module-base-and-dump-match", "unique-dump-window"):
+            if target["status"] in ("module-base-and-dump-match",
+                                     "module-base-relocated-segment-immediate-match",
+                                     "unique-dump-window"):
                 nested_file = target["file"]
                 nested_root = int(target["file_offset"], 16)
                 nested = closure_at(files[nested_file], nested_root)

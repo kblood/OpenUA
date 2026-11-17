@@ -81,7 +81,8 @@ The retail report now adds `far_call_followups_conditional`, following the far-c
 conditional closures for at most three far-call hops. A non-module target is accepted only when its
 live 32-byte window from **both** dumps matches one unique pinned-file window (exact, or one
 delta-consistent 9A-segment mask). A `0AF8` target uses the independently documented `0xAC76`
-module base and must also match its START window in both dumps. These remain mappings under the
+module base and must match its START window in both dumps, either exactly or through the narrowly
+checked `0x00E9` relocated DS immediate described below. These remain mappings under the
 sibling consensus `0x1866`; the owner is still absent, so none establishes the owner's delta or
 execution. The decoder starts at the mapped offset; byte identity alone does not prove that a target
 was entered as an instruction boundary.
@@ -101,11 +102,20 @@ file-function INT or string-token candidate. Opcode inspection identifies `0A3F`
 copy, `1685` as an overlap-safe copy, and `16A8` as a byte fill. Those helper identities say
 nothing about what WALLDEF record, if any, the caller selected.
 
-One further call, `0AF8:00E9`, has the candidate START offset `0xAD5F` under the module-base rule,
-but its 32-byte window does not match both dumps. The report leaves it `module-base-not-cross-checked`.
-The follow-up therefore narrows several far edges to memory and output helpers but still leaves the
+One further call, `0AF8:00E9`, now cross-checks conditionally at START `0xAD5F`. Its unique 32-byte
+START window has one relocated word: file bytes at relative `+5` are `7C 0C` (`DX=0x0C7C`), while
+both dumps have `E2 24` (`DX=0x24E2`). The adjacent `8E DA` is `mov DS,DX`, and
+`0x0C7C + 0x1866 = 0x24E2`. The other 30 bytes match in both dumps. The probe accepts this only
+for this exact pinned instruction shape, under the conditional module base and sibling delta; it
+does not establish execution. The dump linear address is `0x236C9` in both captures. The conditional
+closure therefore adds a module code entry that loads DS from a delta-adjusted segment immediate;
+this still does not identify a WALLDEF or DAX reader. Its bounded decode has 188 instructions and
+one unresolved indirect far call. It also reports one INT 21h with unknown AH, but the pinned local
+bytes at START `0xADD5..0xADDB` are `B4 25 1E C5 15 CD 21`: `mov ah,25; push ds; lds dx,[di]; int 21h`.
+There is no AH write between `mov ah,25` and the interrupt. This identifies that one call's AH from
+the byte sequence; the separate indirect call remains unresolved. It leaves the
 owner delta, code reachability, remaining far-call descendants, WALLDEF table identity, and slot-to-art
-selection unresolved. Its retail output is under ignored `data/work/por-wall-far-target-probe-followup/`.
+selection unresolved. Its retail output is under ignored `data/work/por-wall-far-target-probe-reloc-final/`.
 
 ## Model assumptions (recorded, not proved)
 
@@ -132,6 +142,6 @@ A RAM dump taken while the owner group `0x3DD7` (file `0x2E8F7`) is resident wou
 
 ## Tests
 
-`tests/test_por_wall_far_target_probe.py`: 11 synthetic tests and 1 retail test (gated). The synthetic tests cover: owner refusal; far-site fixup listing, with a mutation that drops the listing; consensus uniform, then broken by a one-off sibling word; owner absent and owner ambiguous (not measured); a JMP stub resolving to a group body, with a mutation that restores `INT 3Fh`; the stub-run discriminator, with a mutation that changes the stub's proc_off; a delta-consistent masked match, with a mutation that changes the delta by one; an exact window in two files (ambiguous); out-of-dump; closure at a resolved body; refusal of unpinned input and of an empty dump list; and a full synthetic run. The retail test asserts the facts above (owner `0x3DD7`, eight fixup-listed sites, consensus `0x1866`, owner unmeasured, the stub-run singling-out, the exact `0x61CB`, and the masked `0x6CAB`).
+`tests/test_por_wall_far_target_probe.py`: 15 synthetic tests and 1 retail test (gated). The synthetic tests cover: owner refusal; far-site fixup listing, with a mutation that drops the listing; consensus uniform, then broken by a one-off sibling word; owner absent and owner ambiguous (not measured); a JMP stub resolving to a group body, with a mutation that restores `INT 3Fh`; the stub-run discriminator, with a mutation that changes the stub's proc_off; a delta-consistent masked match, with a mutation that changes the delta by one; relocated module-immediate matching and three falsifiers; an exact window in two files (ambiguous); out-of-dump; closure at a resolved body; refusal of unpinned input and of an empty dump list; and a full synthetic run. The retail test asserts the facts above (owner `0x3DD7`, eight fixup-listed sites, consensus `0x1866`, owner unmeasured, the stub-run singling-out, the exact `0x61CB`, the masked `0x6CAB`, and the relocated `0x00E9` helper window).
 
-Results (2026-11-17): `python -m pytest tests/test_por_wall_far_target_probe.py -q` → `11 passed, 1 skipped` (retail skipped, no env). With `OPENUA_POR_INSTALL="G:/Games/Pool of Radiance/POOLRAD"` → `12 passed in 52.28s`. Retail tool run → exit `1`, `status=diagnostic`, `answer=conditional-on-sibling-consensus-delta; owner-delta-unmeasured; no-unique-delta-for-all-targets`, JSON 41,100 bytes, deterministic across two runs.
+Results (2026-11-17): with `OPENUA_POR_INSTALL="G:/Games/Pool of Radiance/POOLRAD"`, `python -m pytest tests/test_por_wall_far_target_probe.py -q` → **16 passed in 60.94s** (including the retail test). The retail tool run → exit `1` as expected, `status=diagnostic`, `answer=conditional-on-sibling-consensus-delta; owner-delta-unmeasured; no-unique-delta-for-all-targets`. Its new `0AF8:00E9` mapping is `module-base-relocated-segment-immediate-match` in both dumps.
