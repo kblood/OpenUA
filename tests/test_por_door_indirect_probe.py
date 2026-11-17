@@ -274,8 +274,8 @@ def test_retail_start_handler_sets_ds_before_indirect_far_call():
     assert trace["walk_complete"] is True
     assert trace["bytes_match_expected_chain"] is True
     assert trace["ds_write_between_load_and_call"] is False
-    assert trace["ax_load"]["immediate"] == 0x0C7C
-    assert trace["ds_load"]["value_if_routine_executes"] == 0x0C7C
+    assert trace["ax_load"]["file_immediate"] == 0x0C7C
+    assert trace["ds_load"]["file_immediate_before_relocation"] == 0x0C7C
     assert trace["indirect_call"]["ds_displacement"] == 0x43F0
-    assert trace["table_memory_linear_if_routine_executes"] == 0x10BB0
+    assert trace["static_unrelocated_table_linear"] == 0x10BB0
     assert trace["runtime_executed"] is False

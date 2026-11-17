@@ -242,19 +242,20 @@ def start_indirect_ds_trace(start: bytes) -> dict:
         "bytes_match_expected_chain": bool(exact),
         "ds_write_between_load_and_call": bool(ds_writes_between),
         "ax_load": {"file": "0x0AA07", "bytes": ax["bytes"] if ax else None,
-                    "text": ax["text"] if ax else None, "immediate": 0x0C7C if exact else None},
+                    "text": ax["text"] if ax else None, "file_immediate": 0x0C7C if exact else None},
         "ds_load": {"file": "0x0AA0A", "bytes": ds["bytes"] if ds else None,
                     "text": ds["text"] if ds else None,
-                    "value_if_routine_executes": 0x0C7C if exact else None},
+                    "file_immediate_before_relocation": 0x0C7C if exact else None},
         "indirect_call": {"file": "0x0AA40", "bytes": call["bytes"] if call else None,
                            "text": call["text"] if call else None,
                            "ds_displacement": 0x43F0 if exact else None},
         "terminator": {"file": "0x0AA4D", "bytes": end["bytes"] if end else None,
                        "text": end["text"] if end else None},
         "runtime_executed": False,
-        "table_memory_linear_if_routine_executes": 0x0C7C * 16 + 0x43F0 if exact else None,
-        "limitations": ["Static path only; no caller or runtime execution is established.",
-                        "DS:43F0 is runtime memory, not resolved through a START.EXE file offset."],
+        "static_unrelocated_table_linear": 0x0C7C * 16 + 0x43F0 if exact else None,
+        "limitations": ["This static walk alone does not establish runtime execution.",
+                        "0x0C7C is the file immediate; the running copy can relocate it before the call.",
+                        "The static address calculation is not a runtime DS:43F0 address."],
     }
 
 
@@ -425,7 +426,7 @@ def verdict(result: dict) -> dict:
         "trigger_established": established,
         "reason": ("a decoded direct or resolved indirect call reaches stub 1" if established else
                    "no decoded direct call reaches stub 1 and no decoded indirect operand resolves to it; "
-                   "the START DS value is static, but its runtime table word does not resolve to stub 1 in the dumps"),
+                   "the separate startup runtime capture reaches a retf no-op, not the door routines"),
     }
 
 
@@ -465,8 +466,8 @@ def probe(install: Path, ds_bases: Optional[list[int]] = None) -> dict:
         "verdict": verdict(result),
         "open_edges": [
             "The trigger for stub 1 is not established by any decoded direct or indirect call here.",
-            "The START handler at 0x0A9FC loads DS=0x0C7C before callf [0x43F0], if it executes; "
-            "the runtime table word and execution are not established. DS for the overlay indirect sites remains unknown.",
+            "The START file has immediate 0x0C7C before callf [0x43F0]; the existing runtime capture observes "
+            "the relocated value 0x14A0 and target 12C6:02E5 (retf). DS for the overlay indirect sites remains unknown.",
             "Segment-to-file mapping at run time: the entry copies the image (rep movsb) and far-returns into it; "
             "M0 and M1 remain unproven hypotheses.",
             "Runtime execution is not observed: every row is a static decode.",
@@ -524,13 +525,13 @@ def render_report(doc: dict) -> str:
     tr = a["table_resolution"]
     L.append("- DS bases stated: %s; resolved decoded operands: %d" % (tr["ds_bases_stated"], len(tr["resolved"])))
     ds = a["start_direct_ds_trace"]
-    L.append("- START handler DS trace: %s; DS `%s` before `%s`; table memory linear `%s`; runtime executed: %s" % (
+    L.append("- START handler file trace: %s; DS immediate `%s` before `%s`; unrelocated address `%s`; runtime executed by this probe: %s" % (
         "byte-chain-matched" if ds["bytes_match_expected_chain"] else "not-matched",
-        ("0x%04X" % ds["ds_load"]["value_if_routine_executes"])
-        if ds["ds_load"]["value_if_routine_executes"] is not None else "unknown",
+        ("0x%04X" % ds["ds_load"]["file_immediate_before_relocation"])
+        if ds["ds_load"]["file_immediate_before_relocation"] is not None else "unknown",
         ds["indirect_call"]["text"],
-        ("0x%05X" % ds["table_memory_linear_if_routine_executes"])
-        if ds["table_memory_linear_if_routine_executes"] is not None else "unknown",
+        ("0x%05X" % ds["static_unrelocated_table_linear"])
+        if ds["static_unrelocated_table_linear"] is not None else "unknown",
         ds["runtime_executed"]))
     L += ["", "## Open edges", ""] + ["- " + x for x in doc["open_edges"]] + [""]
     return "\n".join(L)

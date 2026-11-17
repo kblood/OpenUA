@@ -10,7 +10,7 @@ This is the step the open edge in [por-door-caller-probe.md](por-door-caller-pro
 group `0x166CB` (START file `0x0089C`, proc `0x0D6D` = file `0x17438`) is the only stub whose closure reaches
 the plane-3 writer `0x167D4` and clearer `0x166CB`, and no literal far call (`9A`) reaches it. The question
 here is whether an **indirect** call (`FF /2` near, `FF /3` far) can. Answer: no decoded indirect call
-resolves to it; one START table address and its dump word are now observed, but neither establishes a call.
+resolves to it; the START table address and live far target are documented below, but neither reaches the door routines.
 
 ## Pins
 
@@ -106,30 +106,28 @@ None of the near-word hits is a decoded operand and none is in a table that a de
 
 - **Stub 1 has no decoded direct caller** (`E8` or `9A`, under either model) in the walked code.
 - **Stub 1 has no decoded indirect caller that resolves to it.** There are 0 decoded `FF /2` sites. The START
-  `FF /3` site has a statically traced DS and its dump word does not match the M0/M1 candidates; the other four
-  sites use DS or DI bases that remain unresolved.
+  `FF /3` site's runtime target is the `retf` no-op recorded below; the other four sites use DS or DI bases that
+  remain unresolved.
 - **Verdict: `trigger_established: false`.** The indirect route remains unresolved across the five `FF /3` sites;
-  the START handler's static DS and un-timed dump word do not establish an execution-linked call.
+  the startup call is not connected to the door-field writer or clearer.
 
-## START handler DS trace and dump observation
+## START handler runtime cross-check
 
-If the handler executes, its direct-DS call uses linear address
-`0x0C7C*16 + 0x43F0 = 0x10BB0`. The two existing 1 MiB dumps contain `C6 7C 00 00` there, which parses as
-far pointer `0000:7CC6`:
+The static bytes contain `mov ax,0x0C7C` at file `0x0AA07`. The later runtime capture in
+[por-int3f-runtime-capture.md](por-int3f-runtime-capture.md) observed the corresponding immediate as
+`0x14A0` at `12C6:02F1`, consistent with relocation by the run's load segment `0x0824`. The independent
+live-dispatch capture in [por-int3f-live-dispatch.md](por-int3f-live-dispatch.md) stops at the actual
+`callf [43F0h]` site with `DS=0x14A0`, reads `14A0:43F0 = E5 02 C6 12`, and confirms the transfer lands at
+`12C6:02E5`, whose first byte is `CB` (`retf`). It returns to `12C6:032E` immediately.
 
-| Dump | SHA-256 | Bytes at `0x10BB0` | Parsed value |
-|---|---|---|---|
-| `data/work/por-live-memory-pid34644/ram-000000-100000.bin` | `f8191750ea6c672ecf649eac86d6dc3efa15766bb50f73ad6f2f68f27dea4895` | `C6 7C 00 00` | `0000:7CC6` |
-| `data/work/por-wheel-live-capture/ram-000000-100000.bin` | `3788787cd795f1f5e433edcfbfa2fb5f05258c57bfbe0d06de400742570516fa` | `C6 7C 00 00` | `0000:7CC6` |
-
-This is a memory-dump observation only; neither dump shows that the handler ran or when the word was written.
-The observed far pointer does not match the base-zero stub-1 candidates `0000:069C` (M0) or `0000:081E`
-(M1). Since M0 and M1 remain hypotheses, this does not establish the indirect trigger.
+This proves the INT 3Fh startup path reaches a no-op far-call target in that captured run. It does not show
+an overlay dispatch, ECL opcode `0x37`, or any connection to the door-field writer/clearer. The result is stronger
+than the static DS trace but remains bounded to startup.
 
 ## What is not established
 
-1. **Handler execution and table meaning.** Static bytes set DS at `0x0AA40`, but no observation shows this
-   handler executes or that `DS:0x43F0` is an active dispatch entry at that time.
+1. **Door-trigger relation.** The captured call target is a `retf` no-op. No evidence links it to the
+   plane-3 writer/clearer or to the door-field trigger.
 2. **Overlay DS** at `0x6B84` in group `0x27018` / `0x2AEEA`; these values remain untraced.
 3. **The run-time segment mapping.** The entry copies a block with `rep movsb` and `retf`s to `seg:0x38` (the
    pushed segment comes from `AX`, set earlier in the startup), so the segment for file `0x0089C` is not fixed by
@@ -152,9 +150,9 @@ OPENUA_POR_INSTALL="C:/Modding/OpenUA/data/work/por-geo-run/POOLRAD" \
 
 ## Next step
 
-Next, trace the far-call targets that can enter this interrupt handler and identify the owner of the
-`0000:7CC6` target in the dumps. The overlay sites (`DS:0x6B84`) need their own DS trace. Only an execution-
-linked table value resolving to stub 1 would establish the indirect trigger. A live capture is still blocked by copy protection (see
+Next, resolve the overlay indirect sites (`DS:0x6B84`) and trace their relation to the door routines. The
+startup handler target is already identified as `12C6:02E5` (`retf`) in the live capture, but that does not
+settle whether later overlay calls use a different pointer. See
 [por-wall-runtime-capture-attempt.md](por-wall-runtime-capture-attempt.md)).
 
 ## Limits
