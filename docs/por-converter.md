@@ -50,9 +50,10 @@
   container check" below.
 
 Every output says what it is. Each file carries `"playable": false`, or a
-MAP-ONLY banner in the report. One test-only AREATEST run has read and parsed
-one generated GEO file in Hatari; it did not validate a playable module or the
-full set of maps. See the all-GEO test section and "What is not claimed" below.
+MAP-ONLY banner in the report. Test-only AREATEST runs have now read and parsed
+generated GEO001 and GEO029 files in Hatari; they do not validate a playable
+module or the full set of maps. See the all-GEO test section and "What is not
+claimed" below.
 
 This follows the proposal in the GoldBox repository
 (`docs/engine/research/pool-of-radiance-to-frua-module-plan.md`), adapted to
@@ -374,6 +375,15 @@ Full notes and limits: [`por-geo-all-map-group.md`](por-geo-all-map-group.md).
   parsed in OpenUA. The 45-second run ended at its bound without `ERRMODAL`.
   Build SHA-256: `B4B5620B0E29403AC01396595E4F2224F5460A8DC19A8318411415E9509B4F16`.
   Full run setup and evidence: [`por-areatest-group19-modal.md`](por-areatest-group19-modal.md).
+- **Second bounded Hatari parse run (area 29, 2026-11-17).** Using the same
+  test-only build and staged `TGALLMAP.DSN`, I temporarily set `GAME001.DAT`
+  byte 48 to 29, then restored the original file in a `finally` block. The
+  resulting `DBG.LOG` records `== GEO level29` twice, each with 16x16
+  dimensions, through the same post-parse `FRUA_CELLSCAN` site. The staged
+  `GAME001.DAT` is restored to start area 1 and its original SHA-256
+  `BBD3E236FF9A3DA3497167D48A56D265A781ED6EFD7959B91C1641B7C350C01C` was
+  verified afterward. Capture: `data/work/por-openua-areatest-20261117e/DBG-area29-retry.LOG`.
+  This adds one more test-file parse, not a sweep of all 29 maps.
 - **Separate Hatari startup trace (2026-11-17, disposable stage).** Hatari 2.3.1
   executed `frua.prg` (SHA-256
   `AD786159AB110844ABA108A34BD1C875FE7B4A5795E6C03B12383494B6FDAFB8`) with a
