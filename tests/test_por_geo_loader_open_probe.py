@@ -11,7 +11,7 @@ import por_geo_loader_open_probe as p  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 INSTALL = Path(os.environ["OPENUA_POR_INSTALL"]) if os.environ.get("OPENUA_POR_INSTALL") else p.DEFAULT_INSTALL
-HAVE_RETAIL = (INSTALL / "START.EXE").is_file()
+HAVE_RETAIL = (INSTALL / "START.EXE").is_file() and (INSTALL / "GAME.OVR").is_file()
 needs_retail = pytest.mark.skipif(not HAVE_RETAIL, reason="pinned PoR START.EXE not present")
 
 
@@ -63,6 +63,14 @@ def test_selector_chain_is_exactly_index_times_30_plus_2614():
     assert not p._at(b, 0x8671, p.NAME_INDEX_CHAIN)
 
 
+def test_selector_writer_reads_es_record_byte_and_stores_same_al():
+    b = bytearray(0x1FBB3)
+    b[0x1FBA7:0x1FBB3] = p.SELECTOR_WRITER_CHAIN
+    assert p.selector_writer_chain_matches(b)
+    b[0x1FBAF] ^= 1
+    assert not p.selector_writer_chain_matches(b)
+
+
 def test_unpinned_start_is_refused():
     with pytest.raises(p.Refusal, match="pinned"):
         p.inspect_start(b"not START.EXE")
@@ -73,10 +81,13 @@ def test_retail_start_walks_and_open_contract_match():
     doc = p.probe(INSTALL)
     assert doc["pins"]["START.EXE"]["sha256"] == p.START_PIN["sha256"]
     assert doc["pins"]["START.EXE"]["unchanged_after"] is True
+    assert doc["pins"]["GAME.OVR"]["unchanged_after"] is True
     assert doc["all_byte_checks_match"] is True
     assert doc["routine_call_edges"]["expected_edges_match"] is True
     assert doc["routine_call_edges"]["direct_targets"]["8624_to_82b4"] == "0x082B4"
     assert doc["routine_call_edges"]["direct_targets"]["82b4_to_8342"] == "0x08342"
+    assert doc["selector_writer"]["chain_matches"] is True
+    assert doc["selector_writer"]["selector_feed_matches_open_reader"] is True
     assert doc["open_contract"]["path_pointer"] == "ES:DI+0x30 at wrapper entry"
     assert doc["verdict"]["archive"] == "not_established"
     assert doc["verdict"]["requested_block"] == "not_established"
@@ -89,6 +100,7 @@ def test_render_is_deterministic_and_marks_unknowns():
         "path_selector": {"bytes": "00", "chain_matches": False},
         "open_contract": {"open_call_sequence_bytes": "00", "open_call_sequence_matches": False},
         "routine_call_edges": {"expected_edges_match": False},
+        "selector_writer": {"chain_bytes": "00", "chain_matches": False},
         "all_byte_checks_match": False,
         "verdict": {"open_abi": "incomplete", "path_construction": "unknown",
                     "archive": "not_established", "requested_block": "not_established",

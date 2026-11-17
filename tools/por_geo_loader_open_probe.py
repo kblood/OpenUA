@@ -12,7 +12,6 @@ import argparse
 import hashlib
 import json
 import sys
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -24,8 +23,11 @@ DATA_WORK = ROOT / "data" / "work"
 DEFAULT_INSTALL = DATA_WORK / "por-geo-run" / "POOLRAD"
 DEFAULT_OUT = DATA_WORK / "por-geo-loader-open-probe"
 START_NAME = "START.EXE"
+OVR_NAME = "GAME.OVR"
 START_PIN = {"size": 65231,
              "sha256": "d825df2b174675c9088ba1489488bdeebe66ad2a22943f17d3a198e60b6a07bd"}
+OVR_PIN = {"size": 206105,
+           "sha256": "872964a32cef0fc32bbf83bab68b15e04ad36d59076f37b00a179dfee7928614"}
 
 # Resident code offsets; module-helper placement is conditional on the established 0x0AF8 base.
 OPEN_ROUTINE = 0x8624
@@ -37,6 +39,7 @@ OPEN_WRAPPER = MODULE_BASE + 0x1410
 OPEN_SETUP = bytes.fromhex("a0 2c 44 b4 3d 33 d2 eb 06")
 OPEN_INT = bytes.fromhex("1e 8d 55 30 06 1f 33 c9 cd 21 1f")
 NAME_INDEX_CHAIN = bytes.fromhex("a0 76 53 30 e4 ba 1e 00 f7 e2 8b f8 81 c7 14 26 1e 57 9a 0b 0b f8 0a")
+SELECTOR_WRITER_CHAIN = bytes.fromhex("c4 3e d6 49 26 8a 85 24 06 a2 76 53")
 
 
 class Refusal(Exception):
@@ -183,17 +186,51 @@ def inspect_start(start: bytes) -> dict:
     }
 
 
+def inspect_selector_writer(ovr: bytes) -> dict:
+    """Check one decoded PoR byte chain feeding DS:5376; do not assign a field meaning."""
+    if len(ovr) != OVR_PIN["size"] or sha(ovr) != OVR_PIN["sha256"]:
+        raise Refusal("GAME.OVR does not match the pinned PoR file")
+    chain = selector_writer_chain_matches(ovr)
+    return {
+        "file": OVR_NAME,
+        "pin": {"size": len(ovr), "sha256": sha(ovr), "match": True},
+        "chain_file_offset": "0x1FBA7",
+        "chain_bytes": ovr[0x1FBA7:0x1FBB3].hex(" "),
+        "chain_matches": chain,
+        "pointer_load": "LES DI from DS:[0x49D6]",
+        "value_load": "AL = ES:[DI+0x624]",
+        "global_store": "DS:[0x5376] = AL",
+        "selector_feed_matches_open_reader": chain,
+        "field_meaning": "not_established",
+        "runtime_value": "not_established",
+        "exclusivity": "not_claimed; this verifies one static writer chain only",
+    }
+
+
+def selector_writer_chain_matches(ovr: bytes) -> bool:
+    return _at(ovr, 0x1FBA7, SELECTOR_WRITER_CHAIN)
+
+
 def probe(install: Path) -> dict:
-    file = install / START_NAME
-    if not file.is_file():
-        raise Refusal("missing START.EXE")
-    start = file.read_bytes()
+    exe_file = install / START_NAME
+    ovr_file = install / OVR_NAME
+    if not exe_file.is_file() or not ovr_file.is_file():
+        raise Refusal("missing pinned START.EXE or GAME.OVR")
+    start = exe_file.read_bytes()
+    ovr = ovr_file.read_bytes()
     result = inspect_start(start)
-    after = file.read_bytes()
-    if len(after) != len(start) or sha(after) != sha(start):
+    source = inspect_selector_writer(ovr)
+    after_start = exe_file.read_bytes()
+    after_ovr = ovr_file.read_bytes()
+    if len(after_start) != len(start) or sha(after_start) != sha(start):
         raise Refusal("START.EXE changed during probe")
+    if len(after_ovr) != len(ovr) or sha(after_ovr) != sha(ovr):
+        raise Refusal("GAME.OVR changed during probe")
     result["pins"][START_NAME]["unchanged_after"] = True
+    result["pins"][OVR_NAME] = source["pin"] | {"unchanged_after": True}
+    result["selector_writer"] = source
     result["input_unchanged"] = True
+    result["all_byte_checks_match"] = result["all_byte_checks_match"] and source["chain_matches"]
     return result
 
 
@@ -209,9 +246,13 @@ def render_report(doc: dict) -> str:
         "- Conditional on the known module placement, wrapper `0x0AF8:0x1410` sets AH to 3Dh and calls INT 21h with DX pointing at `ES:DI+0x30`.",
         "- DOS AH=3Dh opens a NUL-terminated path. The code bytes establish the pointer location and operation, not the path contents.",
         "- The wrapper gets its access-mode AL from `DS:[0x442C]`; this probe does not fix that live value.", "",
+        "- One GAME.OVR chain loads `ES:[DI+0x624]` from a structure addressed by `DS:[0x49D6]` and stores that byte to `DS:[0x5376]`, the selector read by the filename builder.",
+        "- This link does not identify the structure field or give the selected row an archive meaning.", "",
         "## Evidence values", "",
         "- START file pin: `%s` (%d bytes), unchanged after the read." % (doc["pins"][START_NAME]["sha256"], doc["pins"][START_NAME]["size"]),
         "- Selector bytes at `0x8671`: `%s`; match: `%s`." % (p["bytes"], p["chain_matches"]),
+        "- GAME.OVR selector-writer bytes at `0x1FBA7`: `%s`; match: `%s`." %
+        (doc["selector_writer"]["chain_bytes"], doc["selector_writer"]["chain_matches"]),
         "- Open wrapper bytes: `%s`; match: `%s`." % (o["open_call_sequence_bytes"], o["open_call_sequence_matches"]),
         "- Selected instruction spans match: `%s`; direct call edges match: `%s`." %
         (doc["all_byte_checks_match"], doc["routine_call_edges"]["expected_edges_match"]), "",
