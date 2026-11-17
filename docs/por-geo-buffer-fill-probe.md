@@ -17,8 +17,13 @@ callee `GAME.OVR:0x2EE71` as returning `0` or `ES:[ptr + 0x200 + 16*Y + X]` with
 > Is the 1 KiB buffer at DGROUP `0x6A5C` filled from a GEO block at `block + 2`? If so, is `+0x200`
 > GEO plane 2 (`514 + 16y + x`)?
 
-**Answer: the copy geometry is decoded from bytes and matches `block + 2`. The source pointer and the
-copy direction are not established, so the fill is not established and plane 2 is not claimed.**
+**Answer: the copy geometry is decoded from bytes and matches `block + 2`. A follow-up probe uniquely
+matches the far helper `0x0AF8:0x1685` to START.EXE bytes at `0xC2FB` in two pinned dumps and decodes
+its ABI: first pushed far pointer is source, second is destination, count is the third argument, and
+the routine returns with `retf 0x0A`. Thus the four calls copy `BLK+2+256k` to `BUF+256k`, 256 bytes
+each, conditional on that dump-backed helper identity. The loader's returned pointer is still
+unidentified, so whether `BLK` is a GEO block and whether plane 2 lands in `BUF+0x200` remain
+unestablished. See [por-geo-copy-helper-probe.md](por-geo-copy-helper-probe.md).**
 
 What the bytes establish (file-byte control and dataflow):
 
@@ -30,9 +35,9 @@ What the bytes establish (file-byte control and dataflow):
   block size in `tools/por_map.py`. That is a structural match, not proof the loader returns a GEO
   block.
 
-What stays unproved (see "Not established"): which pushed pointer `0x0AF8:0x1685` reads and which
-it writes; what the loader `0x0802:0x0716` is; what id byte it is given. No dump shows GEO plane
-bytes at the buffer, and nothing executes.
+What stays unproved (see "Not established"): what the loader `0x0802:0x0716` is, whether its
+returned pointer is a GEO block, and what id byte it is given. No dump shows GEO plane bytes at the
+buffer, and nothing executes.
 
 ## Allocation (file bytes)
 
@@ -95,11 +100,12 @@ Entry is a prologue at file `0x2F9BE` (group body `0x10C7`). It takes one byte a
 `BLK` is the far pointer the loader writes to `[bp-6]`. `BUF` is the far pointer at `0x6A5C`. The
 pushed order is src, then dst, then count. Read left to right, that is `copy(src, dst, count)`.
 
-**The copy direction depends on the callee's convention, and that is not decoded.** `0x0AF8:0x1685`
-is not identified. If it is a Pascal-style callee that cleans its own stack (left-to-right pushes),
-the reading is `src` first. That reading is consistent with the allocator's `retf 2` in the one
-candidate found for it (`docs/por-ecl-target-probe.md`), but that candidate is itself unpromoted. A
-three-argument copy would show `retf 0x0A`. Neither is decoded here.
+**The copy direction and ABI are now decoded, conditional on the dump-backed identity.**
+[`por-geo-copy-helper-probe.md`](por-geo-copy-helper-probe.md) maps live `235E:1685` to the unique
+35-byte routine at START.EXE `0xC2FB` in both pinned dumps. Its bytes load source from `[ss:bx+0x0A]`,
+destination from `[ss:bx+0x06]`, and count from `[ss:bx+0x04]`, execute `rep movsb`, and return with
+`retf 0x0A`. This matches the five words pushed by the fill. The conclusion depends on the identified
+helper being the target of the fill's call; it does not prove the fill ran.
 
 ## Stub 7 and the fill's callers (file bytes)
 
@@ -141,8 +147,8 @@ running buffer is drawn from them.
   literal sites and their id sources.
 - **Memory-dump byte observation.** The positive control at `0x1C3E4` (both dumps). No GEO plane
   window in either dump.
-- **Unproved (recorded, not used).** The convention and identity of `0x0AF8:0x1685`; the identity of
-  `0x0802:0x0716` and whether `[bp-6]` is a GEO block; the meaning of the id; the meaning of the
+- **Unproved (recorded, not used).** Whether the dump-identified `0x0AF8:0x1685` helper is reached by
+  the fill at runtime; the identity of `0x0802:0x0716` and whether `[bp-6]` is a GEO block; the meaning of the id; the meaning of the
   `0x49D2` pointer; whether the fill or either caller runs; the value of the buffer at any instant;
   the meaning of `0x402` beyond being 1026.
 
@@ -153,14 +159,14 @@ running buffer is drawn from them.
 | Store `0xE670` sets `ptr` (DGROUP `0x6A5C`) to the allocator's result of 1024 bytes | established by bytes | another store to `0x6A5C` (none in `GAME.OVR`) |
 | Only the fill writes planes 0 to 2 | established for literal addressing of `0x6A5C`: no `les` site writes those planes. Indirect access to the slot is not excluded | a field accessor that writes `+0x000..+0x200` |
 | Fill copies `block+2+256k` to `buf+256k`, count `0x100`, for `k=0..3` | established by bytes (the symbolic walk) | a changed cursor immediate (tested) or a missing push (tested) |
-| Copy `src` is the first pushed pointer | **conditional**: depends on `0x0AF8:0x1685`'s convention | a callee that reads the first pushed pointer as dst |
+| Copy `src` is the first pushed pointer | **established by the exact helper bytes, conditional on dump-backed identity** | a call target at `0x0AF8:0x1685` whose bytes/ABI differ from START `0xC2FB` |
 | `BLK` is the loader's pointer and a 1026-byte GEO block | **not established**: loader unidentified | a live `[bp-6]` whose 1026 bytes are not a decoded GEO block |
-| `buf + 0x200` is GEO plane 2 (`block + 514`) | **conditional** on the two rows above | a live buffer whose `+0x200` plane differs from the decoded plane 2 of the block the loader returned |
+| `buf + 0x200` is GEO plane 2 (`block + 514`) | **not established** until the loader pointer is tied to a GEO block | a live buffer whose `+0x200` plane differs from the decoded plane 2 of the block the loader returned |
 | `0x2EE71` returns `buf + 0x200 + 16Y+X` | established by bytes (the callee probe) | a read path that is not the one listed |
 
 ## Not established
 
-- The identity and calling convention of `0x0AF8:0x1685`.
+- That the fill executes or that its call reaches the dump-identified helper at `0x0AF8:0x1685`.
 - The identity of the loader `0x0802:0x0716`, and that its `[bp-6]` pointer is a GEO block base.
 - That the status `0x402` means a byte count. The match with 1026 is a consistency check only.
 - The meaning of the id byte (from `[bp-3]` or `es:[49D2+0x18A]`) and which TOC block it names.
@@ -174,17 +180,17 @@ running buffer is drawn from them.
 The probe reports these as `next_discriminating_observations` in its JSON.
 
 1. **At the copy call** (`0x2FA70`, `0x2FA92`, `0x2FAB4`, `0x2FAD6`), in a live run, record the five
-   pushed words and 256 bytes at each side, before and after. If `dst` after equals the bytes that
-   were at `src` before, the reading "src first" is confirmed. If `src` after equals the bytes at
-   `dst` before, it is reversed.
+   pushed words and 256 bytes at each side, before and after. The helper ABI now says the first far
+   pointer is source and the second is destination; the live observation would confirm the fill
+   reaches the identified helper and check the resulting bytes.
 2. **At the loader return** (`0x2FA17`), record the status at `[bp-2]` and the pointer at `[bp-6]`.
    Status `0x402` with a pointer whose 1026 bytes decode to a pinned GEO block (by `tools/por_map.py`)
    supports `block+2`. Any other pointer falsifies it.
 3. **The id byte** pushed by each stub 7 caller (`0x1A27` and `0x1FBC4`), and the TOC block id it
    names.
-4. **The resident routines** `0x0AF8:0x1685` and `0x0802:0x0716`, once their segment mapping is
-   established (see `docs/por-ecl-target-probe.md`). The convention is read from the callee's `retf`
-   and its argument loads.
+4. **The unresolved loader** `0x0802:0x0716`, once its segment mapping is established (see
+   `docs/por-ecl-target-probe.md`). The copy helper's identity and ABI have a separate dump-backed
+   result in [`por-geo-copy-helper-probe.md`](por-geo-copy-helper-probe.md).
 5. **A dump of `DGROUP:0x6A5C`** and the 1 KiB it names, taken after an area is entered, compared with
    the four planes of the decoded blocks. The two pinned dumps are of unknown instant.
 
@@ -193,8 +199,9 @@ These need a live run or a further static decode. The probe does not run one.
 ## Discrepancies and notes
 
 - The callee doc's "next discriminating observation 1" (find the code that fills the buffer, and
-  check whether its source is `block + 2`) is answered in part here: the fill is found and its copy
-  geometry decoded. The source and direction stay open, so that observation is only partly answered.
+  check whether its source is `block + 2`) is answered conditionally: the fill's copy geometry is
+  decoded, and the helper ABI identifies the first pushed pointer as source. The loader's returned
+  pointer is still not tied to a GEO block, and runtime execution is unobserved.
 - The callee doc's `ptr + 0x200` plane-2 link is still not established. This probe adds conditions,
   not evidence.
 - Stub 7's trailer is malformed (`0x27`), and its literal `03D5:0043` is a candidate. The fill is
@@ -217,6 +224,7 @@ tests with the install variable set **22 passed** (its anchor is unchanged).
 ## Not claimed
 
 - No plane-2 consumer, no transform, no descriptor-to-event mapping, no area mapping.
-- No buffer-fill identity: the source pointer, the copy direction and the id are open.
+- The copy helper identity and ABI are conditionally resolved from pinned dumps, but the fill's
+  runtime execution, loader source pointer, and id are open.
 - No segment-base model. The `03D5:0043` stub literal is a candidate on a stated stride.
 - No reachability from entry for the fill or either caller.

@@ -117,7 +117,11 @@ cross-checks only; none of them is used as a PoR fact.
   GEO blocks and records per-cell descriptor-byte distributions, hashes and five labelled
   anchors. It emits no event, zone or mapping. A PoR-specific GoldBox route and the local
   ECL1#18 bytes are consistent with `plane2 & 0x7F` acting as one encounter selector, but
-  the native DOS producer link and an OpenUA event binding remain unestablished.
+  the loader's source block and an OpenUA event binding remain unestablished. A separate
+  dump-backed probe identifies the copy helper and confirms the fill's `block+2` copy geometry,
+  but the loader's returned pointer is not tied to a GEO block, so plane 2 is still not claimed;
+  see [`por-geo-copy-helper-probe.md`](por-geo-copy-helper-probe.md) and
+  [`por-geo-buffer-fill-probe.md`](por-geo-buffer-fill-probe.md).
 
 The module is still map-only and unplayable. Area and start mapping are unknown, and
 events, text, art and campaign behaviour are absent.
