@@ -75,6 +75,38 @@ Each closure is decoded with the callee probe's routine from the resolved file o
 
 No closure reaches an INT 21h file function, a literal `WALLDEF`/`8X8D`/`DAX` token, or a record-selection table in the bytes decoded. Each has far calls that were not followed, so each is bounded-incomplete. Selector candidates are presence only.
 
+### Conditional far-call follow-up (bounded, still not a runtime trace)
+
+The retail report now adds `far_call_followups_conditional`, following the far-call sites in those
+conditional closures for at most three far-call hops. A non-module target is accepted only when its
+live 32-byte window from **both** dumps matches one unique pinned-file window (exact, or one
+delta-consistent 9A-segment mask). A `0AF8` target uses the independently documented `0xAC76`
+module base and must also match its START window in both dumps. These remain mappings under the
+sibling consensus `0x1866`; the owner is still absent, so none establishes the owner's delta or
+execution. The decoder starts at the mapped offset; byte identity alone does not prove that a target
+was entered as an instruction boundary.
+
+For the conditional `0428:002A` body at GAME.OVR `0x32392`, the follow-up maps three `0464` targets
+to unique START windows: `0464:00FF` → `0x4778`, `0464:08D4` → `0x4F4D`, and `0464:1951` →
+`0x5FCA`. Its two `0899` targets map to candidate windows at `0x8A08` and `0x89C7`. The bounded
+decoded walks at these mapped offsets report no DOS file-function INT and no WALLDEF/8X8D/DAX
+token candidate. One `0A32:000B` child maps to START `0xA024`; one `08AE:00DC` child maps to
+`0x8BD3`, whose `0A32:00A2` child maps to `0xA0BB`. These are exact byte-window relationships
+under the consensus model, not named loader or renderer routines.
+
+The three conditional `0464` code windows and the `0428` group body call module helpers that match
+the pinned dumps: `0AF8:0A3F` → START `0xB6B5`, `0AF8:0919` → `0xB58F`, `0AF8:084A` → `0xB4C0`,
+`0AF8:1685` → `0xC2FB`, and `0AF8:16A8` → `0xC31E`. Their bounded walks also contain no DOS
+file-function INT or string-token candidate. Opcode inspection identifies `0A3F` as a forward
+copy, `1685` as an overlap-safe copy, and `16A8` as a byte fill. Those helper identities say
+nothing about what WALLDEF record, if any, the caller selected.
+
+One further call, `0AF8:00E9`, has the candidate START offset `0xAD5F` under the module-base rule,
+but its 32-byte window does not match both dumps. The report leaves it `module-base-not-cross-checked`.
+The follow-up therefore narrows several far edges to memory and output helpers but still leaves the
+owner delta, code reachability, remaining far-call descendants, WALLDEF table identity, and slot-to-art
+selection unresolved. Its retail output is under ignored `data/work/por-wall-far-target-probe-followup/`.
+
 ## Model assumptions (recorded, not proved)
 
 1. **One delta for the owner.** The owner's delta is assumed equal to the 17 siblings' common `0x1866`. The sibling groups agree across both dumps, but the owner is not measured.

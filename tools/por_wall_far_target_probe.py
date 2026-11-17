@@ -39,6 +39,9 @@ What it does (each step's output is labelled, never merged):
      delta. The sweep never establishes a delta; it only records the ambiguity.
   7. Bounded closure. Only at a target resolved under the consensus delta, the callee probe's closure
      is decoded from the resolved file offset. Reported as CONDITIONAL on the consensus delta.
+  8. Bounded far-call follow-up. From those conditional closures, follow at most three more far-call
+     hops. A target is accepted only through the conditional 0x0AF8 module base or a unique exact/masked
+     file window reproduced by every dump. Every descendant remains conditional; no call execution is inferred.
 
 Kept apart in every output:
   * owner evidence       the owner group's own bytes and fixups (static);
@@ -97,6 +100,8 @@ MAX_INSNS = wcp.DEFAULT_MAX_INSNS
 SWEEP_EXAMPLES = 8
 STUB_DISTS = (0x16, 0x17)            # header -> first stub, both scored (por_farcall_resolve model)
 STUB_LEN = 5
+MODULE_BASE = 0xAC76               # conditional 0x0AF8 -> START placement, anchored by copy-helper probe
+FOLLOWUP_DEPTH = 3                  # bound: owner target closure, then at most three far-call hops
 
 CLAIMS = {
     "owner_delta": "not_established unless the owner group maps uniquely in a dump",
@@ -110,6 +115,7 @@ NOT_ESTABLISHED = [
     "the caller of the owner at 0x2EEF4",
     "which of the candidate deltas is the true delta for any target (the sweep is ambiguous)",
     "any WALLDEF, 8X8D or DAX binding, or a record-selection table, for any target",
+    "far-call descendants beyond the bounded three-hop follow-up",
 ]
 
 
@@ -369,10 +375,99 @@ def closure_at(data: bytes, root: int) -> dict:
             "int21_file_hits": len(v["dos_file_function_hits"]),
             "int21_ah_unknown": len(v["int21_ah_unknown"]),
             "far_calls_not_followed": len(v["far_calls_not_followed"]),
+            "far_sites": [{"at": _hex(f["at"]), "seg": "0x%04X" % f["seg"],
+                           "off": "0x%04X" % f["off"], "bytes": f["bytes"]}
+                          for f in v["far_calls_not_followed"]],
             "indirect_calls_not_followed": len(v["indirect_calls_not_followed"]),
             "string_token_candidates": len(v["string_token_candidates"]),
             "selector_candidate_count": v["selector_candidate_count"],
             "selection_reached": v["selection_reached"]}
+
+
+def _followup_target(seg: int, off: int, exe: bytes, files: dict[str, bytes],
+                     dumps: list[tuple[str, bytes, int]], delta: int) -> dict:
+    """Map one nested far target only when module-base or exact/masked dump evidence agrees."""
+    linear = (((seg + delta) & 0xFFFF) * PARA + off)
+    if seg == 0x0AF8:
+        file_off = MODULE_BASE + off
+        window = exe[file_off:file_off + WINDOW]
+        exact = ogm.classify_target(window, files) if len(window) == WINDOW else {"status": "out-of-file"}
+        live_match = all(data[linear - base:linear - base + WINDOW] == window
+                         for _, data, base in dumps
+                         if 0 <= linear - base <= len(data) - WINDOW)
+        complete = all(0 <= linear - base <= len(data) - WINDOW for _, data, base in dumps)
+        matched = bool(complete and live_match and exact.get("status") == "unique-START.EXE"
+                       and exact["hits"].get(EXE_NAME) == [_hex(file_off)])
+        return {"status": "module-base-and-dump-match" if matched else "module-base-not-cross-checked",
+                "basis": "conditional 0x0AF8 module base plus unique START window and every dump",
+                "linear": _hex(linear), "file": EXE_NAME, "file_offset": _hex(file_off),
+                "exact_window": exact.get("status"), "live_window_matches_all_dumps": matched,
+                "candidate_bytes": window.hex(" ")}
+
+    rows = []
+    for name, data, base in dumps:
+        relative = linear - base
+        if relative < 0 or relative > len(data) - WINDOW:
+            rows.append({"dump": name, "status": "outside-dump"})
+            continue
+        window = data[relative:relative + WINDOW]
+        exact = ogm.classify_target(window, files)
+        if exact["status"].startswith("unique-"):
+            rows.append({"dump": name, "status": "exact", "file": exact["status"][7:],
+                         "file_offset": exact["hits"][exact["status"][7:]][0]})
+            continue
+        masked = resolve_masked(seg, off, delta, ogm.Dump(data, base), files)
+        if masked["status"] == "masked-unique":
+            hit = masked["hits"][0]
+            rows.append({"dump": name, "status": "masked", "file": hit["file"],
+                         "file_offset": hit["offset"]})
+        else:
+            rows.append({"dump": name, "status": exact["status"], "masked_status": masked["status"]})
+    mapped = {(r.get("file"), r.get("file_offset")) for r in rows
+              if r["status"] in ("exact", "masked")}
+    all_mapped = len(rows) == len(dumps) and len(mapped) == 1 and all(r["status"] in ("exact", "masked") for r in rows)
+    selected = next(iter(mapped)) if all_mapped else (None, None)
+    return {"status": "unique-dump-window" if all_mapped else "unresolved",
+            "basis": "consensus-delta dump window; exact or one-word masked file match",
+            "linear": _hex(linear), "file": selected[0], "file_offset": selected[1], "per_dump": rows}
+
+
+def followup_far_calls(closures: list[dict], exe: bytes, ovr: bytes,
+                       dumps: list[tuple[str, bytes, int]], delta: Optional[int]) -> list[dict]:
+    """Follow a bounded two-hop far-call chain from already-conditional target closures."""
+    if delta is None:
+        return []
+    files = {EXE_NAME: exe, OVR_NAME: ovr}
+    by_dump = {name: (data, base) for name, data, base in dumps}
+    queue = []
+    for row in closures:
+        queue.append((row["file"], int(row["closure"]["root"], 16), row["target"],
+                      row["dump"], 0))
+    output = []
+    seen = set()
+    while queue:
+        source_file, root, ancestry, dump_name, depth = queue.pop(0)
+        key = (source_file, root, depth)
+        if key in seen or depth >= FOLLOWUP_DEPTH:
+            continue
+        seen.add(key)
+        source = files[source_file]
+        traversal = wcp.analyse(source, root, MAX_DEPTH, MAX_PROCS, MAX_INSNS)["verdict"]
+        for site in traversal["far_calls_not_followed"]:
+            target = _followup_target(site["seg"], site["off"], exe, files, dumps, delta)
+            item = {"ancestry_target": ancestry, "source_file": source_file,
+                    "source_root": _hex(root), "source_depth": depth,
+                    "site": _hex(site["at"]), "bytes": site["bytes"],
+                    "raw_target": "%04X:%04X" % (site["seg"], site["off"]),
+                    "mapping": target}
+            output.append(item)
+            if target["status"] in ("module-base-and-dump-match", "unique-dump-window"):
+                nested_file = target["file"]
+                nested_root = int(target["file_offset"], 16)
+                nested = closure_at(files[nested_file], nested_root)
+                item["conditional_closure"] = nested
+                queue.append((nested_file, nested_root, ancestry, dump_name, depth + 1))
+    return output
 
 
 def analyse(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes, int]], owner: int = OWNER, *,
@@ -463,6 +558,7 @@ def analyse(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes, int]], owner: 
 
     sweep_unique = bool(run_sweep) and all(_discriminated(e)
                                            for t in target_rows for e in t["per_dump"])
+    followups = followup_far_calls(closures, exe, ovr, dumps, cand)
     if union_consensus is None:
         answer = "cannot-determine: sibling deltas disagree; no consensus candidate"
     elif owner_measured and resolved_all:
@@ -498,6 +594,8 @@ def analyse(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes, int]], owner: 
                            "owner_delta_measured": owner_measured},
         "targets": target_rows,
         "closures_conditional": closures,
+        "far_call_followup_hop_limit": FOLLOWUP_DEPTH,
+        "far_call_followups_conditional": followups,
         "verdict": {"answer": answer, "owner_delta_measured": owner_measured,
                     "every_target_resolved_under_candidate": resolved_all,
                     "sweep_unique_by_bytes": sweep_unique if run_sweep else None,

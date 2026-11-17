@@ -336,3 +336,29 @@ def test_retail_far_targets_match_documented_facts():
     assert by["0464:1B52"]["per_dump"][0]["resolution"]["exact"]["hits"]["START.EXE"] == ["0x61CB"]
     assert by["0464:2632"]["per_dump"][0]["masked"]["hits"][0]["offset"] == "0x6CAB"
     assert doc["verdict"]["sweep_unique_by_bytes"] is False
+
+    # Conditional follow-up of far calls in those candidates. These mappings
+    # remain under the sibling-delta model; no row claims a call executed.
+    follow = doc["far_call_followups_conditional"]
+    def mapped(ancestry, depth, raw, source_root=None):
+        rows = [r for r in follow if r["ancestry_target"] == ancestry
+                and r["source_depth"] == depth and r["raw_target"] == raw
+                and (source_root is None or r["source_root"] == source_root)]
+        assert len(rows) == 1, (ancestry, depth, raw, len(rows))
+        return rows[0]
+
+    assert mapped("0428:002A", 0, "0464:00FF")["mapping"]["file_offset"] == "0x4778"
+    assert mapped("0428:002A", 0, "0464:08D4")["mapping"]["file_offset"] == "0x4F4D"
+    assert mapped("0428:002A", 0, "0464:1951")["mapping"]["file_offset"] == "0x5FCA"
+    helpers = [r for r in follow if r["ancestry_target"] == "0464:2632"
+               and r["source_depth"] == 0 and r["raw_target"] == "0AF8:0A3F"]
+    assert len(helpers) == 2
+    assert all(r["mapping"]["status"] == "module-base-and-dump-match"
+               and r["mapping"]["file_offset"] == "0xB6B5" for r in helpers)
+    assert mapped("0428:002A", 1, "0A32:000B", "0x4778")["mapping"]["file_offset"] == "0xA024"
+    assert mapped("0428:002A", 2, "0A32:00A2", "0x8BD3")["mapping"]["file_offset"] == "0xA0BB"
+    assert mapped("0428:002A", 1, "0AF8:00E9", "0x89C7")["mapping"]["status"] == "module-base-not-cross-checked"
+    assert all(r.get("conditional_closure", {}).get("int21_file_hits", 0) == 0
+               for r in follow if "conditional_closure" in r)
+    assert all(r.get("conditional_closure", {}).get("string_token_candidates", 0) == 0
+               for r in follow if "conditional_closure" in r)
