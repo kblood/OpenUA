@@ -123,11 +123,14 @@ cross-checks only; none of them is used as a PoR fact.
   see [`por-geo-copy-helper-probe.md`](por-geo-copy-helper-probe.md) and
   [`por-geo-buffer-fill-probe.md`](por-geo-buffer-fill-probe.md).
 - **GEO source loader target** (`tools/por_geo_loader_target_probe.py`, see
-  [`por-geo-loader-target-probe.md`](por-geo-loader-target-probe.md)). Existing dumps conditionally
-  place the live target `0x2068:0x0716` at START.EXE `0x876D`; that body reads two far pointers above
-  the ten bytes pushed by all ten static callers and returns with `retf 0x12`. Because the call
-  frame conflicts, the routine is not identified as the loader and its output is not tied to a GEO
-  block. No plane-2 or descriptor-to-event mapping is claimed.
+  [`por-geo-loader-target-probe.md`](por-geo-loader-target-probe.md) and
+  [`por-geo-loader-caller-frame-probe.md`](por-geo-loader-caller-frame-probe.md)). Existing dumps
+  conditionally place the live target `0x2068:0x0716` at START.EXE `0x876D`; that body reads two far
+  pointers above the ten explicit shape bytes and returns with `retf 0x12`. A caller-frame walk finds
+  eight earlier stack bytes at six of ten call sites, including the GEO fill site, so those six balance;
+  four sites remain unknown. This removes the stated prototype conflict but does not prove the target
+  identity or execution, and the output is not tied to a GEO block. No plane-2 or descriptor-to-event
+  mapping is claimed.
 
 The module is still map-only and unplayable. Area and start mapping are unknown, and
 events, text, art and campaign behaviour are absent.
