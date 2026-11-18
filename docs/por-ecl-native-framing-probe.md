@@ -24,11 +24,13 @@ give here, but nothing here depends on that agreement and no CoAB opcode semanti
 > that framing stop being established?
 
 **Partly.** The classifier's per-opcode class (the operand count for 213 of 256 opcode values is "none", and 43 values
-have a class) and the parser's per-operand byte rules are established by the bytes. A separate bounded trace now
-shows that the decoded dispatcher loop does not call this classifier, and no direct caller of the classifier was
-found in the scanned images. So these are rules of the classifier/parser code, not an established framing of the
-dispatcher loop's live stream. The byte effect of the parser's string/post-step helpers and handler-level reads also
-remain open. The probe does not force a complete table; the open terms are written into each row.
+have a class) and the parser's per-operand byte rules are established by the bytes. The decoded dispatcher loop does
+not call this classifier directly. However, a far call from the `0x1B` handler conditionally maps through a RAM thunk
+to the classifier body in two dumps (see
+[`por-ecl-1b-classifier-dump-probe.md`](por-ecl-1b-classifier-dump-probe.md)). This is memory-byte identity, not
+execution evidence or a binding to a particular loaded ECL stream. The byte effect of the parser's string/post-step
+helpers and handler-level reads also remain open. The probe does not force a complete table; the open terms are written
+into each row.
 
 | Question | Answer | Basis |
 | --- | --- | --- |
@@ -40,8 +42,8 @@ remain open. The probe does not force a complete table; the open terms are writt
 | Is the operand framing closed for every tag? | **No.** Two kinds are open: `0x80` count `> 0` (unpacker `0x8626`: far calls, cursor refs) and `0x81` (post-step `0x87CE`: far calls). `X` and the `0x87CE` cursor effect are not established | Helper census; far calls are literal `0x0AF8:xxxx`, fixup-listed in the existing docs |
 | What are the menu opcodes' operands? | **Not established by the classifier**: both are default-arm (one byte). Their handlers call `2B:2A`/`2B:25`, whose zero-skew targets `0x92C3`/`0x9196` do **not** call the parser or the classifier and do not touch the cursor cell directly. `0x9196` has 21 far call sites | Callers census; menu helper census |
 | Are there other parser callers? | Yes, **13** near call sites: the 8 classifier arms, and five class-1 calls in the routine at `0x7689`. The earlier docs describe the parser's caller as far-only; this refines that. Near callers of `0x7689` itself: none. Whether `0x7689` runs is not established | Walk of `0x7689`; `near_call_candidates` returns no caller |
-| Does the dispatcher use this classifier/parser path? | **Not established; the decoded direct-call evidence separates them.** The dispatcher loop at `0x3EB7` calls `0x3C73`, but does not call `0x9379` or `0x74D3`. The classifier has no direct caller in the scanned bytes; parser callers are its class arms and `0x7689`, which has no direct caller | [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md), bounded caller walks |
-| What does the `0x1B` handler do to the cursor? | `inc [0x49ED]` occurs before any branch; one guard path ends at +1, while the other calls unresolved `0x002B:0x008E`. This agrees with the classifier's one-byte arm only on the settled path | [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md), bounded path walk |
+| Does the dispatcher use this classifier/parser path? | The loop at `0x3EB7` calls `0x3C73`, not the classifier/parser directly. The `0x1B` handler's guard-zero path calls `002B:008E`; in two dumps that target follows a far-jump thunk to the exact classifier bytes at `0x9379`. This conditional route is memory-mapped, but execution and the ECL buffer/cursor binding remain unestablished. Parser callers include the classifier arms and `0x7689`, whose own caller remains unknown | [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md) and [`por-ecl-1b-classifier-dump-probe.md`](por-ecl-1b-classifier-dump-probe.md) |
+| What does the `0x1B` handler do to the cursor? | It increments `[0x49ED]` before branching. Guard-nonzero path ends at +1. Guard-zero calls `002B:008E`, which maps through a thunk to the classifier in two dumps. If the next stream byte is `0x09`, the classifier's class-2 path parses two operands; this remains conditional on the guard and live stream binding | [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md), [`por-ecl-1b-classifier-dump-probe.md`](por-ecl-1b-classifier-dump-probe.md) |
 | Is block byte 22 established as the instruction origin? | **No.** PoR code parses five header records from vaddr `0x9900` to `0x9914`; the two-byte loader skip and all 29 retail blocks are consistent with that table ending at byte 22. The loader source and copy behavior are unresolved, and the VM takes an entry vaddr from a slot | [`por-ecl-entry-origin-probe.md`](por-ecl-entry-origin-probe.md) |
 
 ---
@@ -161,7 +163,7 @@ though it has no direct cursor reference.
 
 ## 4. Callers and the caller routine `0x7689`
 
-- **The classifier** (eight arms, above) is the only caller the probe found for the chain.
+- **The classifier** (eight arms, above) is called by the `0x1B` handler's guard-zero far-call path under the live mapping in two RAM dumps. This is a memory-byte cross-check; it does not show that the handler or call executed. No direct near caller of the classifier was found in the prior scan.
 - **The routine at `0x7689`** (START.EXE stub index 3, zero-skew) makes five class-1 parser calls at `0x7724`, `0x773A`,
   `0x7750`, `0x7766`, `0x777C`. Each is followed by `0x7B82` on `[0x7086]`/`[0x7046]` (operand 1's value and extra
   buffers), and the result is stored to `[0x49E3]`, `[0x49E5]`, `[0x49E7]`, `[0x49E9]`, `[0x49EB]`. The routine has
@@ -229,9 +231,10 @@ Local result: `19 passed` with the variable set; `18 passed, 1 skipped` without 
 
 ## Not claimed
 
-- No runtime claim. Reachability of the classifier path, of the `0x7689` routine, and of any opcode is not established.
-- The dispatcher loop's decoded body calls the dispatcher directly and does not call the classifier/parser. The scan
-  found no direct classifier caller; indirect or table-driven entry is not excluded.
+- No runtime claim. The `0x1B` helper-to-classifier bytes are present in two RAM dumps, but reachability/execution of that path, of the `0x7689` routine, and of any opcode is not established.
+- The dispatcher loop's decoded body calls the dispatcher directly and does not call the classifier/parser. The `0x1B`
+  handler does contain a conditional far call whose target maps through a thunk to the classifier in two dumps. This is
+  not execution proof, and indirect or table-driven entries elsewhere remain open.
 - Block offset 22 is a PoR-derived candidate table boundary, not an established instruction origin. The source record
   and copy-helper behavior that would tie the loaded buffer to block byte 0 are unresolved.
 - No operand or opcode meaning. No FRUA event mapping, no module, no campaign or route claim.
@@ -253,7 +256,8 @@ Local result: `19 passed` with the variable set; `18 passed, 1 skipped` without 
 ## Next evidence that would settle it
 
 1. **Static entry trace:** resolve indirect or table-driven entries to the classifier or parser. The dispatcher loop at
-   `0x3EB7` does not call them directly, so a classifier rule should not be applied to its stream without an entry path.
+   `0x3EB7` does not call them directly; the separate `0x1B` handler has a conditional far-call route mapped to the
+   classifier in two dumps, but a classifier rule should not be applied to a stream without establishing its live state.
 2. **Run-time capture** of the parser entry `0x74D3` and of the stub index 2 (`0x47B`) during an ECL walk: the class byte
    pushed and the cursor before and after. That tests the classifier-to-parser path and the operand framing together.
 3. **The far callees** of `0x8626` and `0x87CE` (literal `0x0AF8:xxxx`): their resolved bodies decide `X` and the cursor

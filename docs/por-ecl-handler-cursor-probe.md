@@ -72,7 +72,7 @@ forms are decoded and consistent.
 | `0x18FC` | `3C 1B` | cmp al,0x1B | selects this arm (the other arms are `0x16`–`0x1A`) |
 | `0x1900` | `80 3E 7D 6F 00` | cmp byte [0x6F7D],0 | guard cell for this arm |
 | `0x1905` | `75 05` | jnz 0x190C | guard non-zero: skip the far call |
-| `0x1907` | `9A 8E 00 2B 00` | call far 0x002B:0x008E | **far helper, unresolved** (taken iff guard is 0) |
+| `0x1907` | `9A 8E 00 2B 00` | call far 0x002B:0x008E | segment is fixup-listed; in two RAM dumps this maps through a far-jump thunk to classifier `0x9379` (taken iff guard is 0) |
 | `0x190C` | `5D CB` | pop bp; retf | return |
 
 Paths for opcode `0x1B` (the probe's bounded walk; AL is decided by the compares, and the guard forks the path):
@@ -80,7 +80,7 @@ Paths for opcode `0x1B` (the probe's bounded walk; AL is decided by the compares
 | Path | Condition | Cursor | Far calls | Status |
 | --- | --- | --- | --- | --- |
 | A | guard non-zero (`jnz` taken at `0x1905`) | +1 (`0x189B`) | none | settled |
-| B | guard zero (`jnz` not taken) | +1, then unknown after the far call | `0x002B:0x008E` at `0x1907` | open: `far-call-unresolved` |
+| B | guard zero (`jnz` not taken) | +1, then enters classifier bytes under the two-dump mapping; resulting cursor depends on the byte at the live stream cursor | `0x002B:0x008E` at `0x1907` | target memory-mapped; execution, guard value, and stream binding unknown |
 
 The handler reads no stream bytes on either path. Its cell references are `[0x49ED]` (once), `[0x6F7F]` (the read at
 `0x189F`), and `[0x6F78]`–`[0x6F7D]` (the sub-arm guards).
@@ -144,8 +144,9 @@ pinned `ECL2.DAX` block 20 with the read-only container parser.
 - Byte at block offset 34: `0x1B`, matching the opcode. Bytes from offset 34: `1b 09 00 08 01 7d 6e 09`.
 - The `0x1B` handler reads no stream bytes on any path. So on path A, offset 35 is the next dispatch key, not an operand
   of `0x1B`. The byte there is `0x09`.
-- The stream probe's classifier arm for `0x1B` is `inc-only` (one byte). That agrees with the handler on path A (+1).
-  On path B the far helper may move the cursor, so offset 35 is not established as the next key there.
+- The stream probe's classifier arm for `0x1B` is `inc-only` (one byte). That agrees with the handler's initial +1.
+  On path B, the far-call target maps to the classifier in two dumps; its subsequent cursor advance depends on the live
+  byte and operand path, so offset 35 is not established as the next key there.
 
 The comparison confirms the field and the +1 on the guard-nonzero path. It does not settle the guard, so it does not
 extend the prefix.
@@ -153,25 +154,33 @@ extend the prefix.
 ## What this changes for the supported prefix
 
 **It does not increase the supported ECL prefix.** The stream probe's 12 bytes (offsets 22–33) and its stop at offset
-34 stand. The `0x1B` record's cursor effect is +1 on path A only. Path B calls an unresolved helper, and the guard
-`[0x6F7D]` is not established. Its writers `0x8DB3` and `0x8E1B` (raw `C6 06 7D 6F 01`, byte-pattern) store 1, and their
-reachability is not established. Without a settled guard, the walk cannot claim a boundary at offset 35.
+34 stand. The `0x1B` record increments the cursor by one on entry. On path A (guard nonzero), that is the settled
+handler effect. On path B (guard zero), the target maps through a thunk to the classifier in two RAM dumps; the
+classifier's next advance depends on the live byte and any operand helper. The guard `[0x6F7D]` is not established.
+Its writers `0x8DB3` and `0x8E1B` (raw `C6 06 7D 6F 01`, byte-pattern) store 1, and their reachability is not
+established. Without a settled guard and stream binding, the walk cannot claim a boundary at offset 35.
 
-## Cross-finding for the parent: the framing is not on the dispatcher path
+## Cross-finding: direct loop path and conditional classifier route
 
 The stream probe takes its operand framing from the classifier at `0x9379` and the parser at `0x74D3`. In the scanned
 bytes:
 
-- The classifier `0x9379` has **no** direct caller (no `E8`, no `9A`).
+- The dispatcher loop at `0x3EB7` calls the dispatcher `0x3C73`, not the classifier/parser. No direct near `E8` caller
+  of classifier `0x9379` was found in the earlier scan. The separate `0x1B` handler does make a fixup-listed far call
+  (`002B:008E`) on its guard-zero path. In both RAM dumps, that call targets a thunk which jumps to the exact
+  classifier body at `0x9379` (see [`por-ecl-1b-classifier-dump-probe.md`](por-ecl-1b-classifier-dump-probe.md)).
 - The parser `0x74D3`'s only direct callers are the classifier's eight arms and the routine at `0x7689`, and `0x7689`
   has **no** direct caller.
 - The dispatcher's only direct caller is the loop at `0x3EB7`, which never calls the classifier or the parser. It reads
   the stream itself, with the same `es:[di+0x6700]` and `[0x49ED]` as the classifier.
 
-So the classifier-based framing describes a path the dispatcher loop is not shown to use. For `0x1B` the two agree
-(+1 on path A). The framing doc already says the reachability of the classifier path and the `0x7689` routine is not
-established. This probe adds that the dispatcher loop's own key and cursor handling is decoded, and it does not use the
-classifier. It does not connect the two. The framing doc notes that the `0x7689` routine would store words to
+So the classifier-based framing is not called directly by the dispatcher loop, but a conditional route from the `0x1B`
+handler to the classifier is now byte-mapped in the dumps. The `0x1B` handler itself increments the cursor before the
+guard; if guard-zero, the classifier then processes the byte at that cursor. For candidate ECL1 #24, this would parse
+the `0x09` record through `0x1DB8` if the block-offset/cursor link holds; neither execution nor that stream binding is
+established. The framing doc still says reachability of the classifier path and the `0x7689` routine is not established.
+This probe adds that the dispatcher loop's own key and cursor handling is decoded. The framing doc notes that the
+`0x7689` routine would store words to
 `[0x49E3]`–`[0x49EB]`, which are the cells the loop's nine callers push. That link is a hypothesis, and this probe does
 not establish it.
 
@@ -206,7 +215,9 @@ Exit `0`; all 20 self-checks pass. Outputs: `data/work/por-ecl-handler-cursor/re
 - Run-time reachability of the stream loop at `0x3EB7`: its nine callers are byte patterns, and the values they push
   (`[0x49E3]`–`[0x49EB]`) are not decoded here.
 - The entry cursor's run-time value, and therefore whether the stream origin (block offset 22) is the loop's entry.
-- The far helper `0x002B:0x008E`: a segment literal whose overlay fixup is not parsed, and so its cursor effect is unknown.
+- The `0x002B:0x008E` target is memory-mapped through a thunk to the classifier in two dumps; see
+  [`por-ecl-1b-classifier-dump-probe.md`](por-ecl-1b-classifier-dump-probe.md). Whether the call executes, the live
+  guard and stream byte, and the resulting cursor effect remain unknown.
 - The guard `[0x6F7D]`: its initial value and whether writers `0x8DB3` or `0x8E1B` run before the first `0x1B`.
 - Whether far callees write the loop exit flag `[0x442E]`, which would end the loop.
 - Other overlays and indirect callers. Only `GAME.OVR` and `START.EXE` are scanned.
@@ -215,5 +226,6 @@ Exit `0`; all 20 self-checks pass. Outputs: `data/work/por-ecl-handler-cursor/re
 
 ## Outputs and boundaries
 
-- Tool and tests are new; no existing ECL tool, doc, or test was modified. The stream and framing probes are read only.
+- This cursor probe is read-only. The later `por-ecl-1b-classifier-dump-probe.py` adds a separate memory-byte cross-check;
+  neither probe establishes execution or edits the stream/framing tools.
 - Outputs go under `data/work/` (git-ignored). The JSON and Markdown contain no absolute paths and no timestamps.

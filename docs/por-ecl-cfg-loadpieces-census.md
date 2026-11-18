@@ -59,6 +59,20 @@ candidate offset `0x0160`; candidate fallthrough then reaches `SAVE` at
 this chain is only a lead for a PoR handler trace, not evidence that the load
 executes.
 
+### Conditional `0x1B` classifier route
+
+A later memory-byte cross-check maps the `0x1B` handler's guard-zero far call
+(`GAME.OVR:0x1907`, raw `002B:008E`) through a thunk to the classifier at
+`GAME.OVR:0x9379` in both available RAM dumps. If ECL1 #24 is the live stream
+and the candidate cursor equals these block offsets, then `0x1B` at `0x1DB1`
+increments to `0x1DB2`; with `[0x6F7D] == 0`, the classifier reads `0x09`,
+assigns class 2, and parses the two operands through `0x1DB8`, where the
+candidate `0x37` record begins. This is a conditional explanation of the CFG
+fallthrough, not proof of the block mapping, guard value, handler execution,
+or `LOAD_PIECES` execution. See
+[`por-ecl-1b-classifier-dump-probe.md`](por-ecl-1b-classifier-dump-probe.md)
+for the dump bytes and limitations.
+
 ### WALLDEF inventory cross-check for the ECL1 #24 operands
 
 A read-only run of the existing [PoR wall inventory](por-converter.md) on the
