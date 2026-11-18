@@ -69,6 +69,17 @@ inside the install).
 The fill's proc `0x10C7` under owner `0x2E8F7` gives file `0x2F9BE`, which is the GEO fill entry in the
 existing docs. The probe only checks that the bytes are there. It does not decode what the routine does.
 
+### Candidate call-frame shape
+
+The file bytes at `0x1A23..0x1A2B` are `8A 46 FD 50 9A 43 00 D5 03`: load AL from
+`[bp-3]`, push AX, then call `03D5:0043`. At the candidate procedure `0x2F9BE`, the code reads
+AL from `[bp+6]` at `0x2FA09` and returns with `retf 2` at `0x2FAFA`. The one pushed word
+therefore matches the candidate procedure's byte argument and cleanup shape.
+
+This is a **conditional stack-shape match**, not target identity or execution evidence. The dump
+still matches only the first four bytes of stub 7, its trailer differs, and the capture does not
+show that `0x1A27` ran. The value in `[bp-3]` is not recovered here.
+
 ### 2. Dump side: identical result in both dumps
 
 | Item | Both dumps |
@@ -125,7 +136,8 @@ What it does **not** establish:
 - that the dump window is the call target at any instant, or that group `0x2E8F7` was resident (it is absent);
 - that the trailer `00` (RAM) or `27` (START) is meaningful, or that the 16 bytes are one stub;
 - the capture instant or atomicity of either dump (the group-map tool records caller metadata as unverified);
-- what proc `0x10C7` does, or any PoR meaning of the group;
+- that the far call reaches candidate proc `0x10C7`, despite the compatible file-side stack shape;
+- the value or meaning of the byte passed from `[bp-3]`, or any GEO meaning of the call;
 - the segment model. `0x1866` is an observation at these sites and is not used as a rule.
 
 The probe does not read any GoldBox file, does not use an emulator, and writes only its JSON under
@@ -135,7 +147,9 @@ The probe does not read any GoldBox file, does not use an emulator, and writes o
 
 ## Tests
 
-`tests/test_por_ecl_21_stub7_dump_probe.py`: 21 tests, all passing.
+`tests/test_por_ecl_21_stub7_dump_probe.py`: 25 tests, all passing. Four tests cover the candidate
+stack shape and falsify it by changing the caller push, callee byte-load displacement, or `retf`
+pop count; these checks remain conditional on the dump target identity.
 
 - **Synthetic falsifiers (20).** A small self-consistent layout with its own pins. Positive case: the
   prefix-only match, with trailer `00` and the control exact. Falsifiers: trailer equal to the file

@@ -33,14 +33,14 @@ D2 = 0x100                # START: header of the owner group of the stub run
 RUN = D2 + 0x17           # START: stub run start (header + 0x17)
 STUB4 = RUN + 5 * 4       # control stub
 STUB7 = RUN + 5 * 7       # the stub under test
-G = 0x100                 # GAME.OVR: group code fileofs
-C = 0x80                  # group codesz
-SITE_BODY = 0x30          # far call 9A at body 0x30
-SEG_BODY = 0x33           # its seg word, fixup-listed
+G = 0xD46                 # GAME.OVR: group code fileofs
+C = 0xD00                 # group codesz; includes the handler call at 0x1A27
+SITE_BODY = 0xCE1         # far call 9A at body 0xCE1 (= file 0x1A27)
+SEG_BODY = 0xCE4          # its seg word, fixup-listed
 OFF, RAW_SEG, LIVE_SEG = 0x0043, 0x0100, 0x2500
-OWN_F = 0x800             # owner fileofs in GAME.OVR
-OWN_C = 0x200             # owner codesz
-PROC = 0x40               # proc of stub 7 (inside owner codesz)
+OWN_F = 0x2E8F7           # owner fileofs in GAME.OVR
+OWN_C = 0x120B            # owner codesz
+PROC = 0x10C7              # proc of stub 7 (inside owner codesz)
 BASE = 0x20000            # dump base
 DUMP_LEN = 0x10000
 GROUP_LIN = 0x21000       # group base in the dump
@@ -53,7 +53,7 @@ def _sha(b):
 
 
 def make_files():
-    ovr = bytearray(random.Random(0x21).randbytes(0x1000))
+    ovr = bytearray(random.Random(0x21).randbytes(0x30000))
     exe = bytearray(random.Random(0x22).randbytes(0x400))
     # group header at D: magic, fileofs, codesz, fixupsz, jmpcnt
     exe[D:D + 4] = b"\xcd\x3f\x00\x00"
@@ -72,8 +72,15 @@ def make_files():
     code[SITE_BODY:SITE_BODY + 5] = b"\x9a" + struct.pack("<HH", OFF, RAW_SEG)
     ovr[G:G + C] = code
     struct.pack_into("<H", ovr, G + C, SEG_BODY)            # the one fixup word
-    # owner proc prologue at OWN_F + PROC
+    # Handler pushes one AX word from [bp-3] immediately before this far call.
+    handler_push_at = G + SITE_BODY - 4
+    ovr[handler_push_at:handler_push_at + 9] = bytes.fromhex("8a 46 fd 50 9a 43 00 00 01")
+    # Candidate fill proc: prologue, low argument byte read, and retf 2.
     ovr[OWN_F + PROC:OWN_F + PROC + 3] = p.PROLOGUE
+    ovr[OWN_F + PROC + p.FILL_ARG_READ_DELTA:
+        OWN_F + PROC + p.FILL_ARG_READ_DELTA + 3] = p.FILL_ARG_READ
+    ovr[OWN_F + PROC + p.FILL_RETF_DELTA:
+        OWN_F + PROC + p.FILL_RETF_DELTA + 3] = p.FILL_RETF
     return bytes(ovr), bytes(exe)
 
 
@@ -136,6 +143,32 @@ def test_synthetic_retail_shape_is_ok_and_prefix_only():
     assert r["owner_group"]["status"] == "absent"          # not placed in the synthetic dump
     assert doc["claims"]["executed"] == "not_established"
     assert doc["claims"]["called"] == "not_established"
+
+
+def test_candidate_fill_argument_shape_is_stack_compatible():
+    ovr, exe = make_files()
+    doc = run_one(ovr, exe, make_dump(ovr, exe))
+    checks = doc["file_side"]["checks"]
+    assert checks["candidate_handler_pushes_one_word"] is True
+    assert checks["candidate_fill_reads_low_argument_byte"] is True
+    assert checks["candidate_fill_returns_popping_one_word"] is True
+    facts = doc["file_side"]["facts"]["candidate_frame"]
+    assert facts["argument_source"] == "byte [bp-3], pushed as AX word"
+    assert facts["candidate_fill_reads"] == "AL <- byte [bp+6]"
+    assert facts["shape"] == "one pushed word matches retf 2; conditional on candidate target"
+
+
+@pytest.mark.parametrize(("offset", "check_id"), [
+    (0x1A26, "candidate_handler_pushes_one_word"),
+    (OWN_F + PROC + p.FILL_ARG_READ_DELTA + 2, "candidate_fill_reads_low_argument_byte"),
+    (OWN_F + PROC + p.FILL_RETF_DELTA + 1, "candidate_fill_returns_popping_one_word"),
+])
+def test_candidate_frame_fails_when_call_abi_bytes_change(offset, check_id):
+    ovr, exe = make_files()
+    bad = bytearray(ovr)
+    bad[offset] ^= 1
+    doc = run_one(bytes(bad), exe, make_dump(bytes(bad), exe), pins=_pins(bytes(bad), exe))
+    assert doc["file_side"]["checks"][check_id] is False
 
 
 def test_trailer_equal_to_file_is_exact16_not_the_expected_result():
@@ -241,8 +274,8 @@ def test_owner_fileofs_mismatch_fails_file_check():
 def test_proc_outside_owner_codesz_fails_file_check():
     ovr, exe = make_files()
     bad = bytearray(exe)
-    bad[STUB7 + 2:STUB7 + 4] = struct.pack("<H", 0x300)     # proc beyond owner codesz 0x200
-    cfg = cfg_for(bytes(bad), stub_proc=0x300)
+    bad[STUB7 + 2:STUB7 + 4] = struct.pack("<H", 0x1300)   # proc beyond owner codesz 0x120B
+    cfg = cfg_for(bytes(bad), stub_proc=0x1300)
     doc = run_one(ovr, bytes(bad), make_dump(ovr, exe), cfg=cfg, pins=_pins(ovr, bytes(bad)))
     checks = doc["file_side"]["checks"]
     assert checks["proc_inside_owner_codesz"] is False

@@ -17,6 +17,8 @@ What it checks
     - the 0xD46 group maps uniquely at linear 0x45C40 (fixup bytes excluded, as the mapper does);
     - the live far call at that base reads 9A, offset 0x0043, live seg 0x1C3B, so the live target is
       1C3B:0043 = linear 0x1C3F3;
+    - the file-side handler push and candidate fill argument/return bytes have a
+      one-word-compatible stack shape; this does not prove the fixup target;
     - the 16 target bytes are compared with START 0x3E11. The classification is one of
       exact-16-match / stub5-match / prefix4-match-trailer-differs / prefix-absent. The EXPECTED
       result is prefix4-match-trailer-differs: the first four bytes CD 3F C7 10 match; the trailer
@@ -28,7 +30,8 @@ What it does NOT establish, and the report says so in "not_established":
   * that the 0x1A27 far call executes, or is reached from the ECL 0x21 dispatch at any instant;
   * that the dump window is the call target at any instant, or that group 0x2E8F7 was resident;
   * that a trailer of 00 (RAM) or 27 (START) is meaningful, or that the 16 bytes are one stub;
-  * the capture instant or atomicity of either dump; what proc 0x10C7 does; any GEO meaning.
+  * the capture instant or atomicity of either dump; that the call reaches the candidate fill;
+    the pushed byte's value/meaning; any GEO meaning.
 
 Exit codes: 0 every file-side check and every dump check holds; 1 a check fails (diagnostic);
 2 a named refusal (unpinned or missing input, unreadable structure, bad dump name, bad output path).
@@ -65,6 +68,11 @@ WINDOW = 16
 STUB_STRIDE = 5
 STUB_RUN_OFFSET = 0x17           # the stub run starts at header + 0x17 (both owner runs in retail)
 PROLOGUE = bytes.fromhex("55 89 e5")
+HANDLER_ARG_PUSH = bytes.fromhex("8a 46 fd 50")
+FILL_ARG_READ_DELTA = 0x4B
+FILL_ARG_READ = bytes.fromhex("8a 46 06")
+FILL_RETF_DELTA = 0x13C
+FILL_RETF = bytes.fromhex("ca 02 00")
 EXPECTED_RESULT = "prefix4-match-trailer-differs"
 RESULTS = ("exact-16-match", "stub5-match", EXPECTED_RESULT, "prefix-absent")
 
@@ -77,6 +85,7 @@ KNOWN_DUMP_SIZE = 1048576
 
 CLAIMS = {
     "memory_present": "the 16 target bytes match START 0x3E11 in the first four bytes only; memory bytes",
+    "candidate_stack_shape": "one pushed word matches candidate fill's byte argument and retf 2; conditional on target",
     "executed": "not_established",
     "called": "not_established",
 }
@@ -85,7 +94,7 @@ NOT_ESTABLISHED = [
     "that the dump window is the call target at any instant, or that group 0x2E8F7 was resident",
     "that the trailer (00 in RAM, 27 in START) is meaningful, or that the 16 bytes are one stub",
     "the capture instant or atomicity of either dump",
-    "what the proc 0x10C7 routine does, and any PoR meaning of the group or its callees",
+    "that the far call reaches candidate proc 0x10C7; the pushed byte's value or meaning; any GEO meaning",
 ]
 
 
@@ -142,6 +151,9 @@ def file_checks(ovr: bytes, exe: bytes, cfg: Cfg) -> dict:
     seg_body = site_body + 3
     run = cfg.owner_descriptor + STUB_RUN_OFFSET
     proc_file = cfg.owner_fileofs + cfg.stub_proc
+    handler_push_at = site - 4
+    fill_arg_read_at = proc_file + FILL_ARG_READ_DELTA
+    fill_retf_at = proc_file + FILL_RETF_DELTA
     checks = {
         "group_descriptor_fileofs": group["fileofs"] == cfg.group_fileofs,
         "site_opcode_9a": ovr[site] == 0x9A,
@@ -155,6 +167,12 @@ def file_checks(ovr: bytes, exe: bytes, cfg: Cfg) -> dict:
         "owner_descriptor_fileofs": owner["fileofs"] == cfg.owner_fileofs,
         "proc_inside_owner_codesz": cfg.stub_proc < owner["codesz"],
         "proc_prologue_in_file": ovr[proc_file:proc_file + 3] == PROLOGUE,
+        "candidate_handler_pushes_one_word":
+            ovr[handler_push_at:handler_push_at + len(HANDLER_ARG_PUSH)] == HANDLER_ARG_PUSH,
+        "candidate_fill_reads_low_argument_byte":
+            ovr[fill_arg_read_at:fill_arg_read_at + len(FILL_ARG_READ)] == FILL_ARG_READ,
+        "candidate_fill_returns_popping_one_word":
+            ovr[fill_retf_at:fill_retf_at + len(FILL_RETF)] == FILL_RETF,
     }
     facts = {
         "group": {k: _hx(v) if isinstance(v, int) else v for k, v in group.items()},
@@ -162,6 +180,15 @@ def file_checks(ovr: bytes, exe: bytes, cfg: Cfg) -> dict:
         "group_fixup_count": len(fixups),
         "site_body_offset": _hx(site_body), "seg_word_body_offset": _hx(seg_body),
         "stub_run_start": _hx(run), "proc_file_offset": _hx(proc_file),
+        "candidate_frame": {
+            "handler_push_at": _hx(handler_push_at),
+            "argument_source": "byte [bp-3], pushed as AX word",
+            "candidate_fill_arg_read_at": _hx(fill_arg_read_at),
+            "candidate_fill_reads": "AL <- byte [bp+6]",
+            "candidate_fill_retf_at": _hx(fill_retf_at),
+            "candidate_fill_retf": FILL_RETF.hex(" "),
+            "shape": "one pushed word matches retf 2; conditional on candidate target",
+        },
         "stub_16_bytes_hex": exe[cfg.stub_file:cfg.stub_file + WINDOW].hex(" "),
         "control_16_bytes_hex": exe[cfg.control_stub_file:cfg.control_stub_file + WINDOW].hex(" "),
     }
