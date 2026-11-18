@@ -1,6 +1,6 @@
 # PoR GEO archive selector: bounded static trace (observe-only)
 
-**Status: `playable: false`. The archive, the requested block, the digit mapping and the origin of the selector are not established. The trace found several writers, not one.**
+**Status: `playable: false`. The selector-to-stem-digit formula is established by a follow-up trace; the runtime selector origin, selected archive, requested block and area mapping remain not established. This trace found several selector writers, not one.** See [`por-geo-selector-format-probe.md`](por-geo-selector-format-probe.md) for the formatter and name-dataflow evidence.
 
 Tool: [`tools/por_geo_archive_selector_probe.py`](../tools/por_geo_archive_selector_probe.py). Tests:
 [`tests/test_por_geo_archive_selector_probe.py`](../tests/test_por_geo_archive_selector_probe.py) (18 tests: 17 synthetic falsifiers and verdict/refusal checks, 1 retail-gated anchor; with `OPENUA_POR_INSTALL` set all 18 ran, none skipped). Output is written under ignored `data/work/por-geo-archive-selector-probe/`.
@@ -100,19 +100,20 @@ Callee edges from these routines are recorded: `0x1F5E8` calls `0x1EAD2` at `0x1
 | A5 | The START set and restore procedures have no direct call site in either image | `bytes_established_no_direct_sites` (indirect calls not excluded) |
 | A6 | The archive digit or area id equals the selector value | `not_established` |
 | A7 | The field's content before its first save is zero or known | `not_established` (allocator zeroing not established) |
-| A8 | The `0x0AF8:0x1366` formatter turns the selector into a decimal digit | `not_established` (callee not entered) |
+| A8 | The `0x0AF8:0x1366` formatter turns the selector into a decimal digit | Superseded: [`por-geo-selector-format-probe.md`](por-geo-selector-format-probe.md) establishes the decimal formatter and selector-to-leading-digit formula from bytes; runtime selector and archive mapping remain open |
 
 ## Corrections to the earlier probes
 
 - [`por-geo-loader-open-chain-probe.md`](por-geo-loader-open-chain-probe.md), claim C5 ("`DS:[0x5376]` is fed from `ES:[DI+0x624]` through `DS:[0x49D6]`, one static chain") is refined here. The field is fed from the selector as well as feeding it: the field's only decoded writer is a copy of `DS:[0x5376]`. So the GAME.OVR restore is a copy from a save cell, not an origin. The chain is circular in the decoded code.
 - [`por-geo-selector-reference-probe.md`](por-geo-selector-reference-probe.md) reported one dynamic write to `0x5376` among several direct assignments. That remains true. This probe adds that START also writes the selector (`0x089AD` and `0x089BA`), and that the START save and restore pair runs through `DS:[0x5377]`.
+- [`por-geo-selector-format-probe.md`](por-geo-selector-format-probe.md) resolves A8 and shows that the formatted leading decimal digit is appended to the `GEO` stem and carried into the composed path, conditional on the module/loader/wrapper identities. The prefix at `DS:[0x547C]` and runtime selector value remain unresolved.
 
 ## Not established
 
 - The origin of the selector at any GEO load. The candidates are the constants 1 and 3, the caller-supplied parameter to the START set procedure, the save-slot copy, the field's last saved value, and any callee that writes through the passed pointers.
 - Which of these runs before a GEO load, or whether the field is zero before its first save.
-- Any value-to-archive mapping: no digit literal beside the GEO stem (per the open-chain probe), and no decoded map from selector to `GEO<n>.DAX`.
-- The formatter's behaviour at `0x0AF8:0x1366`, the callee of the row routine, the allocator's unit and zeroing, and the DS value.
+- The runtime selector value and which `GEO<n>.DAX` path is selected at a particular load. The leading-digit filename formula is established by the follow-up trace, but no selector-to-block or selector-to-area mapping is known.
+- The callee of the row routine, the allocator's unit and zeroing, and the DS value.
 - The table at `DS:0x2614` (stride `0x1E`) that the row-select readers index.
 - Any runtime value or execution.
 
