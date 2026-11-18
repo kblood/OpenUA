@@ -116,8 +116,9 @@ cross-checks only; none of them is used as a PoR fact.
   segment words and remain model-dependent. A later file-side check finds that the
   `0x1A27` argument is the first AL result stored by a three-call loop through
   `002B:0025`, and its one-word shape fits candidate fill `0x10C7`; the helper's return
-  semantics are unknown and the dump target differs after its first four bytes, so target
-  identity, argument value/meaning and root reachability remain unestablished. The
+  meaning is unknown. The separate `03D5:0043` dump cross-check matches only the first
+  four bytes of the candidate stub, so its target and argument meaning remain
+  unestablished. The
   follow-up fixup-residue probe finds that
   none of the eleven far-call offsets can reach the GEO stub under a paragraph-
   aligned resident-image model, for any fixup delta; direct calls to the GEO body
@@ -128,6 +129,13 @@ cross-checks only; none of them is used as a PoR fact.
   first four bytes and proc word, but not its trailer or 16-byte window. The GEO fill
   overlay is absent from both dumps, so this is memory-byte evidence only; it proves
   neither a call nor execution of the fill routine.
+- **ECL 0x21 operand-helper dump chain** (`tools/por_ecl_21_operand_helper_dump_probe.py`,
+  see [`por-ecl-21-operand-helper-dump-probe.md`](por-ecl-21-operand-helper-dump-probe.md)).
+  In both dumps, the handler's live `002B:0025` operand points to a far-jump thunk,
+  which leads to a complete 128-byte body matching `GAME.OVR:0x7609` through its
+  `retf 2`. The helper reads three indexed DS arrays and has tag-dependent paths, but
+  the array contents, returned byte's meaning, and execution are unestablished. This
+  identifies memory bytes; it does not close ECL framing or opcode semantics.
 - **ECL dispatcher cursor (`0x1B`)** (`tools/por_ecl_handler_cursor_probe.py`, see
   [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md)). The handler
   increments the cursor once before branching, but one path calls unresolved
