@@ -75,6 +75,8 @@ def make_files():
     # Handler pushes one AX word from [bp-3] immediately before this far call.
     handler_push_at = G + SITE_BODY - 4
     ovr[handler_push_at:handler_push_at + 9] = bytes.fromhex("8a 46 fd 50 9a 43 00 00 01")
+    ovr[p.HANDLER_OPERAND_LOOP_AT:
+        p.HANDLER_OPERAND_LOOP_AT + len(p.HANDLER_OPERAND_LOOP)] = p.HANDLER_OPERAND_LOOP
     # Candidate fill proc: prologue, low argument byte read, and retf 2.
     ovr[OWN_F + PROC:OWN_F + PROC + 3] = p.PROLOGUE
     ovr[OWN_F + PROC + p.FILL_ARG_READ_DELTA:
@@ -150,16 +152,19 @@ def test_candidate_fill_argument_shape_is_stack_compatible():
     doc = run_one(ovr, exe, make_dump(ovr, exe))
     checks = doc["file_side"]["checks"]
     assert checks["candidate_handler_pushes_one_word"] is True
+    assert checks["candidate_argument_local_filled_by_helper_loop"] is True
     assert checks["candidate_fill_reads_low_argument_byte"] is True
     assert checks["candidate_fill_returns_popping_one_word"] is True
     facts = doc["file_side"]["facts"]["candidate_frame"]
-    assert facts["argument_source"] == "byte [bp-3], pushed as AX word"
+    assert facts["argument_source"] == "byte [bp-3], first helper-result local, pushed as AX word"
+    assert "helper semantics unknown" in facts["argument_provenance"]
     assert facts["candidate_fill_reads"] == "AL <- byte [bp+6]"
     assert facts["shape"] == "one pushed word matches retf 2; conditional on candidate target"
 
 
 @pytest.mark.parametrize(("offset", "check_id"), [
     (0x1A26, "candidate_handler_pushes_one_word"),
+    (p.HANDLER_OPERAND_LOOP_AT + 33, "candidate_argument_local_filled_by_helper_loop"),
     (OWN_F + PROC + p.FILL_ARG_READ_DELTA + 2, "candidate_fill_reads_low_argument_byte"),
     (OWN_F + PROC + p.FILL_RETF_DELTA + 1, "candidate_fill_returns_popping_one_word"),
 ])

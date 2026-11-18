@@ -17,8 +17,9 @@ What it checks
     - the 0xD46 group maps uniquely at linear 0x45C40 (fixup bytes excluded, as the mapper does);
     - the live far call at that base reads 9A, offset 0x0043, live seg 0x1C3B, so the live target is
       1C3B:0043 = linear 0x1C3F3;
-    - the file-side handler push and candidate fill argument/return bytes have a
-      one-word-compatible stack shape; this does not prove the fixup target;
+    - the file-side handler's pushed byte is the first local populated by a three-call
+      loop through 002B:0025; the candidate fill argument/return bytes have a one-word-
+      compatible stack shape, but helper semantics and fixup target remain open;
     - the 16 target bytes are compared with START 0x3E11. The classification is one of
       exact-16-match / stub5-match / prefix4-match-trailer-differs / prefix-absent. The EXPECTED
       result is prefix4-match-trailer-differs: the first four bytes CD 3F C7 10 match; the trailer
@@ -69,6 +70,10 @@ STUB_STRIDE = 5
 STUB_RUN_OFFSET = 0x17           # the stub run starts at header + 0x17 (both owner runs in retail)
 PROLOGUE = bytes.fromhex("55 89 e5")
 HANDLER_ARG_PUSH = bytes.fromhex("8a 46 fd 50")
+HANDLER_OPERAND_LOOP_AT = 0x19CD
+HANDLER_OPERAND_LOOP = bytes.fromhex(
+    "c6 46 fc 01 eb 03 fe 46 fc 8a 46 fc 50 9a 25 00 2b 00 "
+    "8a d0 8a 46 fc 30 e4 8b f8 88 53 fc 80 7e fc 03 75 e2")
 FILL_ARG_READ_DELTA = 0x4B
 FILL_ARG_READ = bytes.fromhex("8a 46 06")
 FILL_RETF_DELTA = 0x13C
@@ -85,6 +90,7 @@ KNOWN_DUMP_SIZE = 1048576
 
 CLAIMS = {
     "memory_present": "the 16 target bytes match START 0x3E11 in the first four bytes only; memory bytes",
+    "candidate_argument_provenance": "[bp-3] is the first AL result stored by a 1..3 loop of calls to 002B:0025; helper semantics unknown",
     "candidate_stack_shape": "one pushed word matches candidate fill's byte argument and retf 2; conditional on target",
     "executed": "not_established",
     "called": "not_established",
@@ -169,6 +175,9 @@ def file_checks(ovr: bytes, exe: bytes, cfg: Cfg) -> dict:
         "proc_prologue_in_file": ovr[proc_file:proc_file + 3] == PROLOGUE,
         "candidate_handler_pushes_one_word":
             ovr[handler_push_at:handler_push_at + len(HANDLER_ARG_PUSH)] == HANDLER_ARG_PUSH,
+        "candidate_argument_local_filled_by_helper_loop":
+            ovr[HANDLER_OPERAND_LOOP_AT:HANDLER_OPERAND_LOOP_AT + len(HANDLER_OPERAND_LOOP)]
+            == HANDLER_OPERAND_LOOP,
         "candidate_fill_reads_low_argument_byte":
             ovr[fill_arg_read_at:fill_arg_read_at + len(FILL_ARG_READ)] == FILL_ARG_READ,
         "candidate_fill_returns_popping_one_word":
@@ -181,8 +190,10 @@ def file_checks(ovr: bytes, exe: bytes, cfg: Cfg) -> dict:
         "site_body_offset": _hx(site_body), "seg_word_body_offset": _hx(seg_body),
         "stub_run_start": _hx(run), "proc_file_offset": _hx(proc_file),
         "candidate_frame": {
+            "argument_provenance":
+                "[bp-3] is the first local filled from AL by the 1..3 loop of calls to 002B:0025; helper semantics unknown",
             "handler_push_at": _hx(handler_push_at),
-            "argument_source": "byte [bp-3], pushed as AX word",
+            "argument_source": "byte [bp-3], first helper-result local, pushed as AX word",
             "candidate_fill_arg_read_at": _hx(fill_arg_read_at),
             "candidate_fill_reads": "AL <- byte [bp+6]",
             "candidate_fill_retf_at": _hx(fill_retf_at),

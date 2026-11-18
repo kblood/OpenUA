@@ -114,9 +114,11 @@ cross-checks only; none of them is used as a PoR fact.
   arm has a direct `E8` edge to handler `0x19BA`, which makes eleven far calls.
   Two are VROOMM stubs under the zero-skew model; the other nine have fixup-listed
   segment words and remain model-dependent. A later file-side check finds that the
-  `0x1A27` push is stack-compatible with candidate fill `0x10C7`, but the dump target
-  differs after its first four bytes, so target identity, argument value/meaning and
-  root reachability remain unestablished. The follow-up fixup-residue probe finds that
+  `0x1A27` argument is the first AL result stored by a three-call loop through
+  `002B:0025`, and its one-word shape fits candidate fill `0x10C7`; the helper's return
+  semantics are unknown and the dump target differs after its first four bytes, so target
+  identity, argument value/meaning and root reachability remain unestablished. The
+  follow-up fixup-residue probe finds that
   none of the eleven far-call offsets can reach the GEO stub under a paragraph-
   aligned resident-image model, for any fixup delta; direct calls to the GEO body
   and runtime reachability remain unexamined.

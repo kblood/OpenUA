@@ -71,14 +71,17 @@ existing docs. The probe only checks that the bytes are there. It does not decod
 
 ### Candidate call-frame shape
 
-The file bytes at `0x1A23..0x1A2B` are `8A 46 FD 50 9A 43 00 D5 03`: load AL from
-`[bp-3]`, push AX, then call `03D5:0043`. At the candidate procedure `0x2F9BE`, the code reads
-AL from `[bp+6]` at `0x2FA09` and returns with `retf 2` at `0x2FAFA`. The one pushed word
-therefore matches the candidate procedure's byte argument and cleanup shape.
+The handler loop at `0x19CD..0x19F0` starts its index at 1, calls `002B:0025`, and stores each
+returned AL in the indexed local; it increments through index 3. The first returned byte therefore
+lands in `[bp-3]`. The bytes at `0x1A23..0x1A2B` then load AL from `[bp-3]`, push AX, and call
+`03D5:0043`. At the candidate procedure `0x2F9BE`, the code reads AL from `[bp+6]` at `0x2FA09`
+and returns with `retf 2` at `0x2FAFA`. The one pushed word therefore matches the candidate
+procedure's byte argument and cleanup shape.
 
 This is a **conditional stack-shape match**, not target identity or execution evidence. The dump
 still matches only the first four bytes of stub 7, its trailer differs, and the capture does not
-show that `0x1A27` ran. The value in `[bp-3]` is not recovered here.
+show that `0x1A27` ran. The value returned by `002B:0025` and its meaning are not established; this
+probe does not prove it is an ECL stream byte or a GEO block id.
 
 ### 2. Dump side: identical result in both dumps
 
@@ -147,11 +150,12 @@ The probe does not read any GoldBox file, does not use an emulator, and writes o
 
 ## Tests
 
-`tests/test_por_ecl_21_stub7_dump_probe.py`: 25 tests, all passing. Four tests cover the candidate
-stack shape and falsify it by changing the caller push, callee byte-load displacement, or `retf`
-pop count; these checks remain conditional on the dump target identity.
+`tests/test_por_ecl_21_stub7_dump_probe.py`: 26 tests, all passing. Five tests cover the candidate
+argument flow and stack shape: one positive shape check and falsifiers for the helper-result loop
+bound, caller push, callee byte-load displacement, and `retf` pop count. These checks remain
+conditional on the dump target identity.
 
-- **Synthetic falsifiers (20).** A small self-consistent layout with its own pins. Positive case: the
+- **Synthetic falsifiers (25).** A small self-consistent layout with its own pins. Positive case: the
   prefix-only match, with trailer `00` and the control exact. Falsifiers: trailer equal to the file
   (`exact-16-match`, flagged), stub-5-only match (flagged), proc word changed (`prefix-absent`), group absent
   or ambiguous, live seg moved (seg expectation fails), far-call opcode changed (group unmapped), control

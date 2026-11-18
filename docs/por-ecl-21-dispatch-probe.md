@@ -8,7 +8,9 @@ or supply equivalent archive/block arguments?
 **Answer: not established.** The direct edge into the GEO body is absent. Under the zero-skew stub model no
 far call of the handler lands on the GEO stub. Nine of the eleven far calls are model-dependent, so the
 static bytes cannot close the question. This probe does not analyze the call-frame arguments; a later
-stub-7 cross-check finds a one-word-compatible frame for the candidate fill, conditional on target identity.
+stub-7 cross-check finds the pushed byte is the first local populated from a three-call `002B:0025`
+loop, and that its one-word shape fits the candidate fill, conditional on target identity. The helper's
+return semantics remain open.
 
 The opcode name, the CoK LOAD_FILES semantics and every GoldBox opcode map were not read or used. The
 "operand parser" label on group `0x74D3` in `docs/por-farcall-resolution.md` cites a GoldBox map and is not
@@ -126,7 +128,7 @@ these only as `nearest_decoded_before`, for inspection. No conclusion is drawn f
 | Does the `0x21` arm reach a handler? | **Yes**: `0x3DA3` `E8` to `0x19BA` | decoded, direct |
 | Does the handler make near or indirect calls? | **No** | decoded walk, complete |
 | Does a far call of `0x19BA` reach the GEO body `0x2F6FF`? | **Not under the zero-skew model**; nine far calls are model-dependent | stub arithmetic; fixup-listed seg words |
-| Do the handler's bytes supply GEO archive/block arguments? | **Not established** | the `0x1A27` call pushes one word compatible with candidate fill `0x10C7`'s `[bp+6]` byte argument and `retf 2`; target identity, value and meaning remain open |
+| Do the handler's bytes supply GEO archive/block arguments? | **Not established** | `[bp-3]` is the first AL result of a 1..3 call loop through `002B:0025`; the candidate fill's `[bp+6]` byte argument and `retf 2` are stack-compatible, but helper semantics, target identity, value and meaning remain open |
 | Is the `0x21` path reachable from a PoR root? | **Not established** | nine `E8` callers of `0x3EB7`, byte-pattern only |
 
 `geo_call_status` is `not-established`. The probe never returns `established`.
