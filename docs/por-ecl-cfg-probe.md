@@ -19,7 +19,9 @@ python tools/por_ecl_cfg_probe.py --install "D:/PoR" --ecl 2 --index 2 \
 The PoR-derived base `0x98FE` is used conditionally, exactly as in the decoder's
 opt-in mode. The output contains candidate instruction offsets and edges, stops,
 header roots that do not resolve into the block, and the linear decoder's first
-stop. It is deterministic, omits the source path and block bytes, and marks
+stop. Candidate instructions retain the decoder's raw operand dictionaries,
+including absolute block offsets. It is deterministic, omits the source path
+and block bytes, and marks
 `playable: false` and `runtime_reachability_established: false`.
 
 ## Walk model

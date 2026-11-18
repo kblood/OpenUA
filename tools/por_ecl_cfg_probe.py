@@ -103,7 +103,8 @@ def analyze_block(block: bytes, header: dict, framing: str = "spec-menus",
             continue
         assert inst is not None
         rec = {"offset": offset, "opcode": inst.opcode, "mnemonic": inst.mnemonic,
-               "length": inst.length}
+               "length": inst.length, "operands": inst.operands,
+               "count_operands": inst.count_operands}
         instructions[offset] = rec
         if inst.opcode in CONDITIONAL_OPS:
             uncertainties.append({"offset": offset, "source": source,

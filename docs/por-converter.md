@@ -44,6 +44,12 @@
   conditional points unresolved. Its `0x98FE` base and menu framing are
   conditional, so it establishes no runtime reachability or event semantics.
   See [`por-ecl-cfg-probe.md`](por-ecl-cfg-probe.md).
+- **ECL candidate-flow `LOAD_PIECES` comparison**
+  (`tools/por_ecl_cfg_loadpieces_census.py`): across 29 retail blocks, it reports
+  19 candidate-flow and 25 linear `0x37` sites, with four candidate-only and ten
+  linear-only offsets. The disagreement confirms model sensitivity; it supplies
+  no runtime loads or art bindings. See
+  [`por-ecl-cfg-loadpieces-census.md`](por-ecl-cfg-loadpieces-census.md).
 - **GEO-loader far-call census** (`tools/por_geo_farcall_census.py`): decodes
   bounded paths in parsed GAME.OVR groups and checks far-call operands against
   their fixup tables. The pinned retail run found 181 arithmetic candidates but
