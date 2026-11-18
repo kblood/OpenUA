@@ -251,12 +251,13 @@ both framing modes, into `ecl-candidate-strings/`. Every record is
 candidate strings" below.
 
 The optional `--candidate-flag2-passable N` setting (0..15, default off) applies
-N to flag-2 walls in normalized maps and planned flat or grouped designs. The
-manifest and report label it as an unverified opt-in candidate, and `playable`
-remains false. One cited PoR runtime route supports interaction-gated crossing
-for a flag-2 edge; the GEO-to-reader binding and general flag-2 rule remain
-unproven. Door 3 remains unchanged at passability 15 and unresolved. Omitting
-the option adds no candidate metadata.
+N to flag-2 walls in normalized maps and planned flat or grouped designs. For
+N=2, one bounded route is runtime-tested through a pipeline-emitted GEO: the
+menu action was accepted and the party crossed to the expected neighboring cell.
+The manifest records this as single-route evidence, not a general rule;
+GEO-to-reader binding and persistent opening remain unproven, and `playable`
+stays false. Other N values are not runtime-tested. Door 3 remains unchanged at
+passability 15 and unresolved. Omitting the option adds no candidate metadata.
 
 ### Usage
 
@@ -341,7 +342,8 @@ these values is recovered from the install. Door mapping records one cited PoR
 DOS route with a flag-2 locked door and successful Bash crossing. The
 GEO-to-reader binding and general flag-2 rule remain unproven; flag 3 is a
 CoK/other-title hypothesis. Flags 2 and 3 currently map to OpenUA passability
-15. The manifest and report stay `playable: false`.
+15 by default. The opt-in passability-2 route is documented below. The manifest
+and report stay `playable: false`.
 
 ### Loader-equivalent checks (per emitted DSN)
 
@@ -752,22 +754,23 @@ reference records a native PoR DOS runtime route where one flag-2 edge required
 LOCKED/BASH/PICK interaction and successful Bash crossed it. That supports one
 recorded case; the plane-3 reader's GEO-buffer binding remains unestablished.
 Flag 3 remains a provisional CoK-derived hypothesis. See
-[`por-geo-door-semantics.md`](por-geo-door-semantics.md). The converter still
-emits the same wall bytes, while its output distinguishes the observed flag-2
-case from the unresolved flag-3 mapping.
+[`por-geo-door-semantics.md`](por-geo-door-semantics.md). The default converter
+still emits passability 15 for both flags, while its output distinguishes the
+observed flag-2 case from the unresolved flag-3 mapping.
 
 | Gen1 edge | OpenUA byte | Meaning in OpenUA |
 | --- | --- | --- |
 | slot 0 (any door) | `0x00` | open |
 | slot S, door 0 | `0xE0 \| S` | solid wall, texture group S |
 | slot S, door 1 | `0x10 \| S` | passable secret-door edge (engine says "A SECRET DOOR!") |
-| slot S, door 2 | `0xF0 \| S` | OpenUA Blocked menu; PoR DOS trace supports interaction-gated crossing for one flag-2 route |
+| slot S, door 2 | default `0xF0 \| S`; opt-in passability 2 gives `0x20 \| S` | OpenUA Blocked action; one pipeline-emitted route crossed after action index 0 was accepted |
 | slot S, door 3 | `0xF0 \| S` | same current byte, but unresolved for PoR; CoK-only Bash/Knock hypothesis |
 
 The texture group S is the Gen1 slot used unchanged. That is **not verified**
 against PoR's WALLDEF art. Door flags 2 and 3 have distinct diagnostic labels
 (`locked`, status `supported-single-route`; `door3-unresolved`, status
-`provisional`) but currently emit the same byte. Per-rule provenance is in
+`provisional`). By default they emit the same byte; the opt-in passability-2
+candidate changes only flag-2 bytes. Per-rule provenance is in
 `por_map.json` under `edge_mapping_evidence.rules`. Every rule keeps
 `geo_reader_binding: unproven` and `general_rule_proven: false`. The per-cell
 descriptor and zone bits are not written.

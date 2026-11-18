@@ -97,8 +97,10 @@ Output folder: must be outside the install and, inside this repository, under
 Opt-in flag-2 candidate (default off). ``--candidate-flag2-passable N`` (0..15)
 encodes Gen1 door flag 2 as OpenUA passability N in every normalized map and
 design the run writes, instead of 15. Rows then carry ``flag2_candidate``, the
-manifest gets a ``candidate`` section, and the report and 'not claimed' list say
-the value is an unverified candidate. Door 3 is unchanged and unresolved. Absent,
+manifest gets a ``candidate`` section, and the report and 'not claimed' list
+record its evidence status. Passability 2 has one tested pipeline-to-Hatari
+route; general flag-2 mapping and persistence remain unproven. Other values are
+not runtime-tested. Door 3 is unchanged and unresolved. Absent,
 every output is byte-identical to the run without the option.
 
 Exit codes
@@ -176,7 +178,7 @@ OWNED_OUTPUTS = ("maps", "designs", ECL_CENSUS_DIR, ECL_DIAG_DIR, ECL_CAND_DIR,
 DOOR_LINE_DEFAULT = (
     "Door mapping: one cited PoR DOS route reports a flag-2 locked door and successful Bash crossing; the GEO-to-reader binding and general flag-2 rule remain unproven. Flag 3 is a CoK/other-title hypothesis; flags 2 and 3 currently map to OpenUA passability 15.")
 DOOR_LINE_CANDIDATE = (
-    "Door mapping: one cited PoR DOS route reports a flag-2 locked door and successful Bash crossing; the GEO-to-reader binding and general flag-2 rule remain unproven. Flag 3 is a CoK/other-title hypothesis and stays UNRESOLVED (passability 15). Flag 2 maps to OpenUA passability 15 by default; in this run only, flag 2 is written as passability %d (OPT-IN CANDIDATE, not verified, not the default, not a door rule).")
+    "Door mapping: one cited PoR DOS route reports a flag-2 locked door and successful Bash crossing; the GEO-to-reader binding and general flag-2 rule remain unproven. Flag 3 is a CoK/other-title hypothesis and stays UNRESOLVED (passability 15). Flag 2 maps to OpenUA passability 15 by default; in this run only, flag 2 is written as passability %d (OPT-IN CANDIDATE; %s).")
 
 UNSUPPORTED = [
     "No FRUA art binding: walls use the dsn.py ART_BLOCK; PoR wall art is unresolved.",
@@ -195,18 +197,29 @@ def unsupported_list(flag2_passability: Optional[int] = None) -> list[str]:
     map to 15'; flag 3 is still stated as unresolved."""
     if flag2_passability is None:
         return list(UNSUPPORTED)
-    return [DOOR_LINE_CANDIDATE % flag2_passability if u == DOOR_LINE_DEFAULT else u
+    return [DOOR_LINE_CANDIDATE % (flag2_passability,
+                                   flag2_candidate_status(flag2_passability))
+            if u == DOOR_LINE_DEFAULT else u
             for u in UNSUPPORTED]
 
 
+def flag2_candidate_status(passability: int) -> str:
+    if passability == 2:
+        return ("single-route runtime-tested; general mapping, GEO-reader binding and "
+                "persistent opening remain unproven; not default or a general rule")
+    return ("not runtime-tested; general mapping remains unproven; not default or a "
+            "general rule")
+
+
 def candidate_block(flag2_passability: int) -> dict:
-    """The manifest's record of an opt-in flag-2 candidate. Never claimed as verified."""
+    """Manifest record of an opt-in encoding, with evidence limited to passability 2."""
     return {"opt_in": True, "default": False, "playable": False,
             "rule": "locked", "door": 2,
             "flag2_passability": flag2_passability,
             "default_flag2_passability": 15,
+            "evidence_doc": "docs/por-door-flag2-candidate-runtime-20261118.md",
             "door3_passability": 15, "door3_status": "unresolved",
-            "status": "opt-in candidate; not verified; not promoted to default"}
+            "status": flag2_candidate_status(flag2_passability)}
 
 
 ECL_UNSUPPORTED = list(ptd.NOT_CLAIMED) + [
@@ -965,9 +978,9 @@ def render_report(manifest: dict) -> str:
     cand = manifest.get("candidate")
     if cand is not None:
         lines += ["**OPT-IN CANDIDATE: door flag 2 written as OpenUA passability %d "
-                  "(default 15). Not verified, not promoted to default, `playable: false`. "
+                  "(default 15). Status: %s. `playable: false`. "
                   "Door 3 stays unresolved (passability 15).**"
-                  % cand["flag2_passability"], ""]
+                  % (cand["flag2_passability"], cand["status"]), ""]
     lines += [
         "| Item | Count |", "| --- | ---: |",
         "| GEO blocks decoded | %d / %d |" % (s["blocks_decoded"], s["blocks_total"]),
@@ -1216,8 +1229,9 @@ def run(install: Path, out: Path, plan: Optional[Path], *,
     ``flag2_passability`` is an OPT-IN candidate (None, the default, is the
     unchanged pipeline). When given, door flag 2 is encoded as that OpenUA
     passability in every map and design this run writes, and the manifest
-    carries a ``candidate`` section. It is refused outside 0..15 before any
-    output is staged.
+    carries a ``candidate`` section. Passability 2 has one tested route; the
+    general mapping remains unproven. Other values are not runtime-tested. It
+    is refused outside 0..15 before any output is staged.
     """
     if flag2_passability is not None and (
             isinstance(flag2_passability, bool)
@@ -1357,8 +1371,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                  c["blocks_decoded"], c["walks_complete"]["spec-menus"], c["blocks_decoded"]))
     if "candidate" in manifest:
         print("por_pipeline: OPT-IN CANDIDATE: flag 2 as passability %d (default 15); "
-              "not verified, not the default, playable=false"
-              % manifest["candidate"]["flag2_passability"])
+              "%s; playable=false"
+              % (manifest["candidate"]["flag2_passability"],
+                 manifest["candidate"]["status"]))
     print("por_pipeline: wrote %s and %s" % (args.out / "por_pipeline.json",
                                            args.out / "por_pipeline_report.md"))
     return code

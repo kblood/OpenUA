@@ -98,6 +98,32 @@ def test_full_run_decodes_every_block_and_round_trips_design(tmp_path):
     assert (out / "designs" / "PORMAP" / "PORMAP.DSN" / "GEO005.DAT").is_file()
 
 
+def test_flag2_candidate_manifest_limits_runtime_claim_to_passability_two(tmp_path):
+    install = make_full_install(tmp_path)
+    plan = _plan(tmp_path, [_good_design()])
+
+    tested, code = pp.run(install, tmp_path / "pass2", plan, flag2_passability=2)
+    assert code == 0
+    assert tested["candidate"]["opt_in"] is True
+    assert tested["candidate"]["default"] is False
+    assert tested["candidate"]["playable"] is False
+    assert "single-route runtime-tested" in tested["candidate"]["status"]
+    assert "persistent opening remain unproven" in tested["candidate"]["status"]
+    assert tested["candidate"]["evidence_doc"] == "docs/por-door-flag2-candidate-runtime-20261118.md"
+    door_line = next(x for x in tested["unsupported"] if x.startswith("Door mapping:"))
+    assert "passability 2" in door_line and "single-route runtime-tested" in door_line
+    assert "general flag-2 rule remain unproven" in door_line
+    assert tested["designs"][0]["loader_equivalent"]["runtime_loaded"] is False
+    report = (tmp_path / "pass2" / "por_pipeline_report.md").read_text(encoding="utf-8")
+    assert "single-route runtime-tested" in report and "playable: false" in report
+
+    untested, code = pp.run(install, tmp_path / "pass3", plan, flag2_passability=3)
+    assert code == 0
+    assert untested["candidate"]["status"].startswith("not runtime-tested")
+    assert "not runtime-tested" in next(
+        x for x in untested["unsupported"] if x.startswith("Door mapping:"))
+
+
 def test_relative_output_path_publishes_and_cleans_staging(tmp_path, monkeypatch):
     # Python 3.12+ normalizes tempfile.mkdtemp's relative dir to an absolute path.
     install = make_full_install(tmp_path)

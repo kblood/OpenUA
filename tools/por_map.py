@@ -286,12 +286,20 @@ EDGE_MAPPING_EVIDENCE = {
 
 
 # OPT-IN CANDIDATE ONLY. The default encodes door flag 2 as passability 15 (the
-# Blocked-menu edge). This candidate encodes flag 2 as passability 2 instead,
-# which the engine routes to the same Blocked menu but skips the
-# passability-15-only FORCE refusal. It is never applied unless a caller asks
+# Blocked-menu edge). Passability 2 has one bounded runtime-tested route through
+# the standard pipeline and Hatari; general flag-2 semantics, GEO-reader binding
+# and persistent opening remain unproven. It is never applied unless a caller asks
 # for it (``--candidate-flag2-passable``); it is not the default and is not a
 # verified PoR rule.
 CANDIDATE_FLAG2_PASSABILITY = 2
+
+
+def flag2_candidate_status(passability: int) -> str:
+    if passability == CANDIDATE_FLAG2_PASSABILITY:
+        return ("single-route runtime-tested; general flag-2 mapping, GEO-reader "
+                "binding and persistent opening remain unproven; not default")
+    return ("not runtime-tested; general flag-2 mapping, GEO-reader binding and "
+            "persistent opening remain unproven; not default")
 
 
 def map_edge(slot: int, door: int,
@@ -299,8 +307,8 @@ def map_edge(slot: int, door: int,
     """Return (OpenUA wall byte, rule name) for one Gen1 edge.
 
     ``flag2_passability`` is None for the default conversion (flag 2 -> 15).
-    Only an explicit opt-in candidate sets it; the rule name stays "locked"
-    so the default rule counts and evidence labels do not change."""
+    An explicit opt-in value changes only flag-2 walls; the rule name stays
+    "locked" so normalized rule counts and evidence labels remain stable."""
     if slot == 0:
         return 0x00, "open"
     if door == 0:
@@ -666,8 +674,8 @@ def convert(dax_path: Path, out: Path, *, block_id: Optional[int],
         warnings.append("one or more expectations FAILED (see Expectations)")
     if flag2_passability is not None:
         warnings.append("OPT-IN CANDIDATE: door flag 2 encoded as passability %d "
-                        "(default is 15); not the default conversion"
-                        % flag2_passability)
+                        "(default is 15); %s"
+                        % (flag2_passability, flag2_candidate_status(flag2_passability)))
 
     out.mkdir(parents=True, exist_ok=True)
     if entry is not None:
@@ -688,12 +696,13 @@ def convert(dax_path: Path, out: Path, *, block_id: Optional[int],
             "rule": "locked",
             "flag2_passability": flag2_passability,
             "default_flag2_passability": 15,
-            "status": "opt-in candidate; not verified; not promoted to default",
+            "evidence_doc": "docs/por-door-flag2-candidate-runtime-20261118.md",
+            "status": flag2_candidate_status(flag2_passability),
         }
-        report += ("\n## OPT-IN CANDIDATE (not the default)\n\n"
-                   "Door flag 2 is encoded as passability %d instead of 15. "
-                   "This output is for a bounded runtime experiment only.\n"
-                   % flag2_passability)
+        report += ("\n## OPT-IN FLAG-2 ENCODING\n\n"
+                   "Door flag 2 is encoded as passability %d instead of the "
+                   "default 15. Status: %s.\n"
+                   % (flag2_passability, flag2_candidate_status(flag2_passability)))
     # Deterministic output: sorted JSON keys, no timestamps.
     (out / "por_map.json").write_text(
         json.dumps(norm, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -725,9 +734,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--name", default=DEFAULT_NAME, help="design name, 1..8 chars")
     ap.add_argument("--title", default=None, help="GAME001 title (31 bytes max)")
     ap.add_argument("--candidate-flag2-passable", type=int, default=None, metavar="N",
-                    help="OPT-IN CANDIDATE ONLY (default: off): encode door flag 2 "
-                         "as OpenUA passability N (0..15) instead of 15. Not the "
-                         "default; never applied unless given.")
+                    help="OPT-IN (default: off): encode door flag 2 as OpenUA "
+                         "passability N (0..15) instead of 15; passability 2 has "
+                         "one runtime-tested route, general rule unproven")
     args = ap.parse_args(argv)
     try:
         if args.dax is not None:

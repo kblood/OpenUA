@@ -119,7 +119,23 @@ def test_candidate_is_opt_in_via_cli(tmp_path, capsys):
     assert norm["candidate"]["opt_in"] is True
     assert norm["candidate"]["default"] is False
     assert norm["candidate"]["flag2_passability"] == 2
-    assert "OPT-IN CANDIDATE" in (out / "por_map_report.md").read_text(encoding="utf-8")
+    assert norm["candidate"]["evidence_doc"] == "docs/por-door-flag2-candidate-runtime-20261118.md"
+    report = (out / "por_map_report.md").read_text(encoding="utf-8")
+    assert "OPT-IN FLAG-2 ENCODING" in report
+    assert "single-route runtime-tested" in report
+    assert "general flag-2 mapping" in report
+    assert "persistent opening remain unproven" in report
+    assert "single-route runtime-tested" in norm["candidate"]["status"]
+
+
+def test_non_two_candidate_value_is_not_called_runtime_tested(tmp_path):
+    install = T.make_install(tmp_path)
+    out = tmp_path / "cand3"
+    assert pm.main(_convert_args(install, out,
+                                 ("--candidate-flag2-passable", "3"))) == 0
+    import json
+    norm = json.loads((out / "por_map.json").read_text(encoding="utf-8"))
+    assert norm["candidate"]["status"].startswith("not runtime-tested")
 
 
 def test_candidate_geo_differs_only_at_flag2_walls(tmp_path):

@@ -116,16 +116,42 @@ emitted 1/1 designs, and reported loader-equivalent `pass`. Its
 `GEO020.DAT` SHA-256 is
 `B8C35F0F5F524CE077B78E517D0AB65809A966C2BC009444D68069E1DE191644`, exactly
 matching the transposed candidate fixture used by the successful Hatari run.
-This establishes repeatable production of the tested GEO bytes. The pipeline
-report still says `runtime_loaded: false` and `engine_executed: false`; the
-runtime result comes from the separate Hatari run above. `GAME001.DAT` differs
-between the pipeline output and the runtime fixture, so this is a GEO-byte
-match, not a claim that the complete design folders are identical.
+This establishes repeatable production of the tested GEO bytes. The current
+manifest marks passability 2 `single-route runtime-tested`, links this evidence
+document, and still says `runtime_loaded: false` and `engine_executed: false`;
+the runtime result below comes from a separate Hatari run.
 
 Reproduction command (from the repository root):
 
 ```text
-tools/.venv/Scripts/python.exe tools/por_pipeline.py --install "G:\\Games\\Pool of Radiance\\POOLRAD" -o data/work/por-flag2-pipeline-check-20261118/route --plan data/work/por-flag2-pipeline-check-20261118/route-plan.json --candidate-flag2-passable 2
+tools/.venv/Scripts/python.exe tools/por_pipeline.py --install "G:\\Games\\Pool of Radiance\\POOLRAD" -o data/work/por-flag2-pipeline-check-20261118/final --plan data/work/por-flag2-pipeline-check-20261118/route-plan.json --candidate-flag2-passable 2
 ```
 
-The generated report and design are under the ignored `data/work/por-flag2-pipeline-check-20261118/` folder. Its plan is a bounded test plan and retains `playable: false` and the unproven block-to-area join.
+The generated report and design are under the ignored `data/work/por-flag2-pipeline-check-20261118/` folder. Its plan is a bounded test plan and retains `playable: false` and the unproven block-to-area join. The pipeline's `GAME001.DAT` and `GEO020.DAT` hashes both match those in the Hatari runtime folder below.
+
+### Hatari run of the pipeline output
+
+I copied the disposable runtime assets from `run-cand-transpose/`, then replaced
+its `POR2NEW.DSN` contents with the exact pipeline-emitted design. Hatari 2.3.1
+ran the same binary (`frua.prg` SHA-256
+`1B1A8FCDDD0DBFC0D57C27A6087D728E77C0799BB27E358CCCE7E4303D66D705`). The
+pipeline's `GAME001.DAT` and `GEO020.DAT` hashes were `360B5F14…E31717` and
+`B8C35F0F…E191644`; both remained unchanged after exit. The source install was
+not used as a runtime directory.
+
+The bounded script reached the ready marker and logged the following route:
+
+| Observation | Runtime log |
+| --- | --- |
+| Sweep | entry level 020; loaded area 020, skipped 28 absent test areas, failed 0 |
+| Tested edge | row 14, column 10, facing 6 (west), passability 2 |
+| Menu/action | pick index 0; action allowed 1; forward allowed 1 |
+| Next forward decision | row 13, column 10; passability 0; forward allowed 1 |
+
+The runtime therefore executes the exact pipeline-produced GEO and crosses the
+tested edge to the expected neighboring OpenUA cell. The visible menu label was
+not inspected, so “pick index 0” is not a screen-verified Bash label. The
+diagnostic's `DOOR stored edge` sample reads `(row=10,column=14,west)`, not the
+tested `(14,10,west)` edge; this run gives no post-action state or persistence
+result for the tested edge. The run is in the ignored
+`data/work/por-flag2-candidate-20261118/run-pipeline-transpose/` folder.
