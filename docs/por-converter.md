@@ -85,7 +85,10 @@ cross-checks only; none of them is used as a PoR fact.
   arm has a direct `E8` edge to handler `0x19BA`, which makes eleven far calls.
   Two are VROOMM stubs under the zero-skew model; the other nine have fixup-listed
   segment words and remain model-dependent. No GEO target, argument binding, or
-  root reachability is established.
+  root reachability is established. The follow-up fixup-residue probe finds that
+  none of the eleven far-call offsets can reach the GEO stub under a paragraph-
+  aligned resident-image model, for any fixup delta; direct calls to the GEO body
+  and runtime reachability remain unexamined.
 - **ECL dispatcher cursor (`0x1B`)** (`tools/por_ecl_handler_cursor_probe.py`, see
   [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md)). The handler
   increments the cursor once before branching, but one path calls unresolved
