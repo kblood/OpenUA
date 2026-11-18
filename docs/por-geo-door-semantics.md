@@ -1,9 +1,10 @@
 # Pool of Radiance GEO door semantics: evidence and gaps
 
-**Status: CENSUS + STATIC TRACES. No door rule is proven. `tools/por_map.py` is unchanged.**
-This note audits the converter's edge mapping for door flags (plane 3) and asks
-whether any branch can be made exact enough to change emitted OpenUA behaviour.
-It cannot, on the evidence available. The tool added with this note,
+**Status: CENSUS + STATIC TRACES + ONE PoR DOS RUNTIME ROUTE. No general flag-to-runtime rule is proven.**
+This note audits the converter's edge mapping for door flags (plane 3). One
+PoR-specific original-game runtime trace now supports interaction-gated
+crossing for a flag-2 edge; it does not establish a general byte-to-runtime
+mapping. The tool added with this note,
 `tools/por_geo_door_census.py`, only counts retail door values. It does not decide
 what a value does in play.
 
@@ -16,11 +17,32 @@ what a value does in play.
 | slot 0 (any door) | `0x00` | `open` |
 | slot S, door 0 | `0xE0 \| S` | `solid` (passability 14) |
 | slot S, door 1 | `0x10 \| S` | `auto-door` (passability 1, secret door) |
-| slot S, door 2 or 3 | `0xF0 \| S` | `locked` (passability 15, "Blocked") |
+| slot S, door 2 | `0xF0 \| S` | `locked` (passability 15, "Blocked") |
+| slot S, door 3 | `0xF0 \| S` | `door3-unresolved` (same provisional byte) |
 
-Two things are collapsed or assumed here: flags 2 and 3 share one byte, and
-flag 1 is mapped to "passable secret door" without a PoR check. The question is
-whether PoR's own bytes, or OpenUA's runtime semantics, prove any of these.
+Door flags 2 and 3 still produce the same byte, but diagnostics now keep them
+distinct: flag 2 has one native PoR locked-door observation, while flag 3
+remains an other-title hypothesis. Flag 1 is still mapped to "passable secret
+door" without a PoR check.
+
+## PoR original-game runtime observation (flag 2)
+
+The read-only GoldBox reference contains a reproducible DOSBox-X trace of the
+Pool of Radiance DOS executable in
+`docs/engine/research/gen1-dosbox-runtime-trace.md`, sections dated 2026-07-22.
+It records a party facing west at `(14,10)` in `GEO2.DAX` block 20. The edge
+has wall slot 10 and observed plane-3/door flag 2. The native game displays
+`LOCKED. BASH PICK EXIT`. A Pick attempt fails in one recorded attempt and
+leaves the party in place; a subsequent Bash succeeds, moves the party to
+`(13,10)`, and persists the opened edge. The trace then reaches descriptor 3
+and native COMBAT. The GoldBox files were used read-only; this is PoR DOS
+runtime evidence, not a CoK rule.
+
+This supports the concrete observation that this flag-2 route is not an
+unconditional open edge and that a successful interaction permits crossing.
+It does not prove that every GEO byte with value 2 feeds this edge reader: the
+separate static probe still has not bound its plane-3 buffer to the selected
+GEO block. It also does not say anything about flag 3.
 
 ## Pins
 
@@ -137,23 +159,31 @@ joined to a loaded GEO block's plane 3. Therefore the branch establishes
 `GEO door flag 1 -> passable`. Which events set or clear plane-3 fields also
 remains unknown.
 
-## Evidence class 3: OpenUA runtime semantics (repo code, measured in-tree)
+## Evidence class 3: OpenUA source-level movement behavior (not runtime-tested here)
 
-`tools/dsn.py` (wall byte comment) and `src/engine/boot.c` `play_can_pass`
-define the high nibble (passability):
+`tools/dsn.py` (wall byte comment) and `src/engine/boot.c` define the high
+nibble (passability). The menu-less `play_can_pass` used for strafe/backstep
+refuses menu-coded nibbles; the forward-play path calls
+`play_forward_allowed` → `jt955_dungeon_decide`, which runs the Blocked menu:
 
-| high nibble | engine behaviour in `play_can_pass` |
+| high nibble | forward PLAY source path |
 | --- | --- |
 | 0 | open, pass |
 | 1 | secret door, pass (the engine announces "A secret door!") |
 | 6..13 | pass iff game-record byte `63 + code` is nonzero (event-togglable) |
 | 14 | solid, blocked |
-| 2, 3, 4, 5, 15 | the force/knock/pick menus, deferred: **refuse passage** |
+| 2, 15 | forward move runs the Blocked menu (force, pick when available, key when available, leave); a successful action permits this step |
+| 3 | announces a secret door, then runs the same Blocked-menu variant |
+| 4 | forward move runs the second Blocked-menu variant; action 1 refuses |
+| 5 | announces a secret door, then runs the second menu variant |
 | default | refuse |
 
 The low nibble is the wall texture group; it plays no part in passability.
-Nibbles 2 to 5 and 15 are all deferred menus, so today every one refuses
-passage.
+OpenUA's current forward movement therefore has an interaction path for the
+converter's `0xF0 | slot` edge. It does not yet persist a successfully opened
+edge as the PoR DOS trace does; the current Bash path only reports success to
+the movement gate. The other movement keys use the menu-less gate and refuse
+these menu-coded edges.
 
 ## Evidence class 4: other-title hypothesis (NOT PoR evidence)
 
@@ -173,33 +203,37 @@ but is a different title and is not used to decide anything here.
 | slot 0 -> open | `0x00` | 88 slot-0 doors exist; their effect is unknown | open | not proven either way |
 | door 0 wall -> solid | `0xE0\|S` | 9,780 wall edges; 100 one-sided disagreements | solid | not proven |
 | door 1 -> secret door | `0x10\|S` | PoR writes field `01`; conditional static branch with reader result `R == 1` updates position, but reader identity and GEO-plane source are unestablished; 2,876 wall edges | passes, prints "A secret door!" | **not proven**: no established link from GEO flag 1 to `R == 1`, nor PoR evidence for the secret-door message |
-| door 2 or 3 -> blocked | `0xF0\|S` | 130 and 14 wall edges | refuses (menu deferred) | **not proven**; 2 vs 3 cannot be separated, and both refuse today, so a split changes bytes but not play |
+| door 2 -> interaction-gated | `0xF0\|S` | 128 wall edges; one PoR DOS route at GEO2 block 20 shows LOCKED/BASH/PICK and successful Bash crossing | forward movement offers the Blocked menu and permits a successful force/Bash action | supported for one original-game route; general flag binding and persistent-open parity remain unproven |
+| door 3 -> unresolved | `0xF0\|S` | 14 wall edges; no PoR runtime observation | same OpenUA Blocked menu as door 2 | unresolved; Bash/Knock-only comes from CoK research, not PoR |
 
-Splitting flags 2 and 3 into nibbles 2 and 3 would change the emitted map
-bytes and nothing else, because both refuse in `play_can_pass` today. It would
-only matter once the menus are lifted, and the evidence for which menu each
-value opens does not exist yet.
+The converter preserves the existing byte mapping for now. It distinguishes
+flag 2 and flag 3 in normalized rule counts and evidence labels, although both
+currently encode as passability 15. A future flag-3 mapping change needs
+PoR-specific evidence; the CoK distinction must not be promoted.
 
 ## Decision
 
-No change to `tools/por_map.py`; the edge mappings remain provisional. No
-falsification test is added for a mapping branch, because no branch was
-changed. The census tests are in `tests/test_por_geo_door_census.py`; the
-caller and movement-branch tests are in `tests/test_por_door_caller_probe.py`
-and `tests/test_por_door_reader_branch_probe.py`.
+`tools/por_map.py` now reports a separate flag-2 `locked` label and flag-3
+`door3-unresolved` label while preserving the emitted bytes. The overall
+`por_door_rule_proven` flag remains false because this one runtime route does
+not bind all GEO flag-2 fields to the runtime reader or establish the other
+flags. Tests assert both the unchanged wall byte and the distinct evidence
+labels. Census, caller and branch tests remain in
+`tests/test_por_geo_door_census.py`, `tests/test_por_door_caller_probe.py`, and
+`tests/test_por_door_reader_branch_probe.py`.
 
 ## Limits
 
 - Census counts stored bytes. It says nothing about passability.
 - Shared-edge agreement measures consistency only.
-- The executable evidence is static. A conditional branch from reader result
-  `R == 1` to a decoded position update is shown in
-  `por-door-reader-branch-probe.md`, but the reader identity and the GEO-to-
-  buffer source link are not established. No gameplay movement or door
-  capture was made. The interactive runtime path is blocked by copy protection
-  (`docs/por-wall-runtime-capture-attempt.md`).
+- The reader identity and GEO-to-buffer source link are not established. The
+  GoldBox PoR DOS runtime observation is independent of that static link and
+  establishes only its recorded route. OpenUA has not yet been runtime-tested
+  against that route. The current interactive capture path is blocked by copy
+  protection (`docs/por-wall-runtime-capture-attempt.md`).
 - The `slot S` texture group is still unverified against WALLDEF.
-- Other titles (GoldBox, CoK, COAB) are hypothesis only.
+- CoK/COAB semantics are hypothesis only. The GoldBox repository's PoR DOS
+  runtime trace is cited as PoR-specific evidence and was read-only.
 
 ## Next discriminating observation
 
@@ -216,11 +250,12 @@ would identify only a trigger path; it would not establish the writer's
 gameplay event. The reader branch effects are now decoded statically, but
 their input is not yet tied to a specific loaded GEO cell.
 
-The next static discriminator is to establish the reader's live target and
-trace its buffer back to the loaded GEO block, so its 2-bit return can be
-paired with the raw door flag. The writer's caller/event remains a separate
-open edge. A live capture could confirm those links and the movement outcome,
-but the current runtime route is blocked at copy protection (see
+The next discriminator is to run the OpenUA-converted GEO2 block-20 flag-2
+route and compare the menu, Bash success, persistence and reverse crossing with
+the original trace. Separately, establish the reader's live target and trace
+its buffer back to the loaded GEO block, so its 2-bit return can be paired
+with the raw door flag. The writer's caller/event remains a separate open
+edge. The current direct retail capture route is blocked at copy protection (see
 [`por-wall-runtime-capture-attempt.md`](por-wall-runtime-capture-attempt.md)).
-Until one of those observations identifies the event and passage effect, all
-mapping branches stay hypotheses.
+Until those observations close the byte-to-reader link and OpenUA parity, the
+general mapping branches stay provisional.

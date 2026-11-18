@@ -223,23 +223,30 @@ def decode_gen1_geo(raw: bytes) -> list[dict]:
 # --------------------------------------------------------------------------
 
 # OpenUA passability nibble (dsn.py): 0 open, 1 secret door (passable, engine
-# says "A SECRET DOOR!"), 14 solid wall, 15 blocked: force/knock/pick edge.
-# These are provisional conversion assumptions inherited from the GoldBox
-# CoK-based find_geo_path research, not proven PoR rules. PoR's own plane-3
-# traces have not established any flag's movement meaning. The low nibble is
-# the wall texture group; Gen1 slot is used unchanged (also unverified).
+# says "A SECRET DOOR!"), 14 solid wall, 15 Blocked-menu edge. The PoR DOS
+# runtime trace records one flag-2 edge where Bash opened the way; the runtime
+# GEO-byte-to-reader link and a general flag rule remain unestablished. Flag 3
+# remains a CoK-derived hypothesis. The low nibble is the wall texture group;
+# Gen1 slot is used unchanged (also unverified).
 MAP_RULES = {
     "open": "ASSUMPTION: slot 0: no wall, passable whatever the door byte says",
     "solid": "ASSUMPTION: wall, no door flag: solid wall (14)",
     "auto-door": "ASSUMPTION: wall + door 1 maps to passable secret-door (1)",
-    "locked": "ASSUMPTION: wall + door 2 or 3 maps to blocked edge (15)",
+    "locked": "PoR runtime example: wall + flag 2 opens with successful Bash; encoded as Blocked-menu edge (15)",
+    "door3-unresolved": "ASSUMPTION: wall + door 3 also uses Blocked-menu edge (15); CoK-only semantics, not PoR-proven",
 }
 
 EDGE_MAPPING_EVIDENCE = {
-    "status": "provisional-unverified-for-por",
-    "source_boundary": "GoldBox CoK-based convention; not PoR proof",
+    "status": "single-por-runtime-case; general-mapping-unverified",
+    "source_boundary": "PoR DOS runtime supports interaction-gated crossing for one flag-2 edge; GEO field binding and general semantics remain open; flag 3 is CoK-only hypothesis",
     "por_door_rule_proven": False,
     "wall_art_binding_proven": False,
+    "por_runtime_observation": {
+        "source": "GoldBox read-only reference: docs/engine/research/gen1-dosbox-runtime-trace.md, PoR DOS runtime sections dated 2026-07-22",
+        "case": "GEO2.DAX block 20, cell (14,10), west, wall slot 10, observed plane-3 flag 2",
+        "outcome": "LOCKED. BASH PICK EXIT; Pick failed in one attempt; Bash succeeded, party crossed to (13,10), and the original persisted the opened edge",
+        "scope": "one native route observation; not a full proof that every stored flag-2 byte feeds this runtime edge reader",
+    },
 }
 
 
@@ -251,12 +258,15 @@ def map_edge(slot: int, door: int) -> tuple[int, str]:
         return (14 << 4) | slot, "solid"
     if door == 1:
         return (1 << 4) | slot, "auto-door"
-    return (15 << 4) | slot, "locked"
+    if door == 2:
+        return (15 << 4) | slot, "locked"
+    return (15 << 4) | slot, "door3-unresolved"
 
 
 def _passable_unconditionally(slot: int, door: int) -> bool:
-    # Mirrors find_geo_path.py: slot 0 is open; flag 1 passes automatically;
-    # flags 2/3 need an interaction and are not counted as unconditional.
+    # Current conversion policy: slot 0 is open, door 1 is provisionally
+    # mapped to passable, door 2 is interaction-gated in the PoR runtime case,
+    # and door 3 remains provisionally mapped to a Blocked-menu edge.
     return slot == 0 or door == 1
 
 
@@ -407,9 +417,10 @@ def render_report(norm: dict, warnings: list[str], unsupported: list[str]) -> st
         "logic. Runtime loading in OpenUA is not verified by this tool.",
         "",
         "**Evidence boundary:** emitted door passability and wall-slot texture",
-        "choices are provisional assumptions. The door convention comes from",
-        "GoldBox CoK research; PoR evidence does not prove these rules or the",
-        "wall-art binding. See the converter documentation for the evidence boundary.",
+        "choices remain provisional overall. One PoR DOS runtime route supports",
+        "interaction-gated crossing for a flag-2 edge; its general GEO-to-runtime",
+        "binding is open. Flag 3 is a CoK-only hypothesis, and wall art is unverified.",
+        "See the converter documentation for the evidence boundary.",
         "",
         "## Source (read-only)",
         "",
@@ -482,7 +493,7 @@ UNSUPPORTED_MAP_ONLY = [
     "plane 2 descriptor (search/event dispatch key, backdrop/zone): kept in por_map.json only",
     "zones and cell flags: zero",
     "wall art: HDR art block copied from OpenUA dsn.py (known-good), not PoR WALLDEF",
-    "door semantics: provisional CoK-derived assumptions; no PoR passability rule is proven; flags 2/3 collapse to one blocked edge",
+    "door semantics: flag 2 has one PoR DOS locked-door/Bash runtime example but GEO-reader binding and general rule remain unproven; flag 3 remains a CoK-derived hypothesis; both currently encode to the OpenUA Blocked-menu edge",
     "Gen1 wall slot used as the OpenUA texture group unchanged (unverified)",
     "party and economy: GAME001 defaults (XP, gold) from dsn.Design, not PoR",
     "campaign: one area only, no transitions to other areas",

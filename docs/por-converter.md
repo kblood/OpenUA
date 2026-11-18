@@ -623,24 +623,26 @@ Each wall is `(slot 0..15, door 0..3)`. Slot 0 means no wall graphic.
 ### Edge mapping: Gen1 `(slot, door)` -> OpenUA wall byte
 
 OpenUA's wall byte is `passability << 4 | texture group` (`dsn.py`: 0 open,
-1 secret door, 14 solid, 15 "Blocked: force/knock/pick"). The rule used by
-this slice is inherited from the GoldBox `find_geo_path.py` research, whose
-basis is Curse of the Azure Bonds. It is a provisional cross-title convention,
-not a PoR finding: PoR's plane-3 census and decoded reader branches do not
-establish which values pass movement. See
+1 secret door, 14 solid, 15 "Blocked: force/knock/pick"). A read-only GoldBox
+reference records a native PoR DOS runtime route where one flag-2 edge required
+LOCKED/BASH/PICK interaction and successful Bash crossed it. That supports one
+recorded case; the plane-3 reader's GEO-buffer binding remains unestablished.
+Flag 3 remains a provisional CoK-derived hypothesis. See
 [`por-geo-door-semantics.md`](por-geo-door-semantics.md). The converter still
-emits the assumed mapping below for diagnostic compatibility, and its output
-marks the mapping `provisional-unverified-for-por`.
+emits the same wall bytes, while its output distinguishes the observed flag-2
+case from the unresolved flag-3 mapping.
 
 | Gen1 edge | OpenUA byte | Meaning in OpenUA |
 | --- | --- | --- |
 | slot 0 (any door) | `0x00` | open |
 | slot S, door 0 | `0xE0 \| S` | solid wall, texture group S |
 | slot S, door 1 | `0x10 \| S` | passable secret-door edge (engine says "A SECRET DOOR!") |
-| slot S, door 2 or 3 | `0xF0 \| S` | blocked (bash/knock); OpenUA cannot tell 2 from 3 |
+| slot S, door 2 | `0xF0 \| S` | OpenUA Blocked menu; PoR DOS trace supports interaction-gated crossing for one flag-2 route |
+| slot S, door 3 | `0xF0 \| S` | same current byte, but unresolved for PoR; CoK-only Bash/Knock hypothesis |
 
 The texture group S is the Gen1 slot used unchanged. That is **not verified**
-against PoR's WALLDEF art. Door flags 2 and 3 are collapsed. The per-cell
+against PoR's WALLDEF art. Door flags 2 and 3 have distinct diagnostic labels
+but currently emit the same byte. The per-cell
 descriptor and zone bits are not written.
 
 ### Coordinate and wall mapping (tested)

@@ -244,11 +244,22 @@ def test_geo_rejects_bad_block():
     (0, 3, 0x00, "open"),          # no wall: the door byte is ignored
     (5, 0, 0xE5, "solid"),
     (5, 1, 0x15, "auto-door"),     # passes automatically -> secret-door passage
-    (5, 2, 0xF5, "locked"),
-    (5, 3, 0xF5, "locked"),        # bash/knock only: no OpenUA distinction
+    (5, 2, 0xF5, "locked"),       # PoR DOS runtime example: interaction-gated
+    (5, 3, 0xF5, "door3-unresolved"),  # same byte for now; PoR meaning open
 ])
 def test_map_edge_table(slot, door, byte, rule):
     assert pm.map_edge(slot, door) == (byte, rule)
+
+
+def test_door_two_and_three_keep_same_byte_but_distinct_evidence_labels():
+    # Door 2 has one PoR DOS locked-door interaction trace. Door 3 is still
+    # only a CoK-derived hypothesis; preserve bytes until its semantics resolve.
+    assert pm.map_edge(10, 2) == (0xFA, "locked")
+    assert pm.map_edge(10, 3) == (0xFA, "door3-unresolved")
+    evidence = pm.EDGE_MAPPING_EVIDENCE
+    assert evidence["por_door_rule_proven"] is False
+    assert evidence["status"] == "single-por-runtime-case; general-mapping-unverified"
+    assert "GEO2.DAX block 20" in evidence["por_runtime_observation"]["case"]
 
 
 # ---- OpenUA geo: coordinate and wall mapping -------------------------------
@@ -342,10 +353,16 @@ def test_end_to_end_emits_map_only_design(tmp_path, capsys):
     norm = json.loads((out / "por_map.json").read_text(encoding="utf-8"))
     assert norm["status"] == "map-only" and norm["playable"] is False
     assert norm["edge_mapping_evidence"] == {
-        "status": "provisional-unverified-for-por",
-        "source_boundary": "GoldBox CoK-based convention; not PoR proof",
+        "status": "single-por-runtime-case; general-mapping-unverified",
+        "source_boundary": "PoR DOS runtime supports interaction-gated crossing for one flag-2 edge; GEO field binding and general semantics remain open; flag 3 is CoK-only hypothesis",
         "por_door_rule_proven": False,
         "wall_art_binding_proven": False,
+        "por_runtime_observation": {
+            "source": "GoldBox read-only reference: docs/engine/research/gen1-dosbox-runtime-trace.md, PoR DOS runtime sections dated 2026-07-22",
+            "case": "GEO2.DAX block 20, cell (14,10), west, wall slot 10, observed plane-3 flag 2",
+            "outcome": "LOCKED. BASH PICK EXIT; Pick failed in one attempt; Bash succeeded, party crossed to (13,10), and the original persisted the opened edge",
+            "scope": "one native route observation; not a full proof that every stored flag-2 byte feeds this runtime edge reader",
+        },
     }
     assert norm["source"]["block_id"] == 18 and norm["source"]["raw_size"] == 1026
     assert norm["source"]["sha256"] == hashlib.sha256(
@@ -355,9 +372,8 @@ def test_end_to_end_emits_map_only_design(tmp_path, capsys):
 
     report = (out / "por_map_report.md").read_text(encoding="utf-8")
     assert "MAP-ONLY" in report and "Not a playable module claim" in report
-    assert "GoldBox CoK research" in report
-    assert "PoR evidence does not prove these rules" in report
-    assert "provisional CoK-derived assumptions" in report
+    assert "One PoR DOS runtime route supports" in report
+    assert "Flag 3 is a CoK-only hypothesis" in report
     assert "ECL scripts and every event" in report
 
     dsn = out / "PORMAP.DSN"
