@@ -83,9 +83,12 @@ cross-checks only; none of them is used as a PoR fact.
 - **ECL dispatcher cursor (`0x1B`)** (`tools/por_ecl_handler_cursor_probe.py`, see
   [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md)). The handler
   increments the cursor once before branching, but one path calls unresolved
-  `0x002B:0x008E`; the whole effect remains open. The dispatcher loop does not call
-  the classifier directly, so the 12-byte stream prefix is only a classifier-model
-  diagnostic and is not established as the live stream boundary.
+  `0x002B:0x008E`; the whole effect remains open. Under the unvalidated MZ-image
+  far-call model, that target lands at START.EXE `0x053E` (`00 D1 C5 00 00`), outside
+  the accepted and partial VROOMM stub runs. This rejects that model candidate only;
+  it does not identify the callee. The dispatcher loop does not call the classifier
+  directly, so the 12-byte stream prefix is only a classifier-model diagnostic and is
+  not established as the live stream boundary.
 - **ECL entry origin** (`tools/por_ecl_entry_origin_probe.py`, see
   [`por-ecl-entry-origin-probe.md`](por-ecl-entry-origin-probe.md)). PoR code parses
   five class-1 header records from vaddr `0x9900` to `0x9914`; retail bytes are
