@@ -80,6 +80,7 @@ Every attempt started from the same runtime folder. A new `evidence*` folder was
 | 2 | `evidence-attempt2-forward-only-no-walk/` | **one** Up (72) at +60 s | No walk render, no `DOOR` line. Quit at +30 s. |
 | 3 | `evidence-attempt3-return-no-walk/` | one Return (28) at +60 s, no forward key | No walk render (`dbg_dump_view` not written within 40 s). No forward key was sent. |
 | 4 | `evidence/` (final) | none (diagnostic) | Screenshot of the pre-walk screen (first try: `Screen dump failed!` because `runtime-savgama/shots/` did not exist). |
+| 5 | `evidence-attempt5-updoor-sequence/` | **Up (72), Return (28), Up (72)**, after the ready marker; see [Attempt 5](#attempt-5-up-return-up-2026-11-18) | No walk render (`dbg_dump_view` not written within 40 s after the last key), no `DOOR` line. Quit at +66 s after the marker. |
 
 The earlier flag-2 door run sent Up, Return and Up, and it reached the walk. Here the first
 Up produced no walk render, and so did Return on its own. Hatari's screenshot shows the
@@ -87,6 +88,33 @@ pre-walk screen: a scene picture above an empty text panel (what the game is wai
 not determined within the key budget. Up is the same scan code as the forward key, so it could
 not be used for that purpose here. A mouse event (Hatari exposes `hatari-event` clicks) was not
 tried.
+
+### Attempt 5: Up, Return, Up (2026-11-18)
+
+The same design and binary as attempts 2 to 4, run in a disposable copy so the source runtime
+was not touched. The input sequence was the area-20 door-harness sequence (Up, Return, Up), sent
+only after the `GEO-SWEEP end: continuing into jt948` marker.
+
+| Item | Value |
+| --- | --- |
+| Runtime copy | `runtime-savgama-updoor-attempt5/` (copied from `runtime-savgama/` with `cp -a`; `DBG.LOG` and `shots/` cleared before the run). Its `PSAVGAMA.DSN/SAVE/` (six `*.CCH` files, 398 B each) came with the copy, unchanged; they are not user saves. The "no SAVE folder" note above is wrong for this design. |
+| Script | `scripts/run_updoor_attempt5.sh` (not in the runtime folder). Refuses if any Hatari process exists. Signals only its own PID. Watchdog 240 s. |
+| Hatari | PID `1096`, script PID `1091`, watchdog PID `1098`. Started 10:05:21. Exited 10:06:47, rc 0. |
+| Input | Ready marker at 10:05:41. Screenshot (`hatari-shortcut`, not a game key) at +5 s. Up 72: keydown 0.2 s, keyup, 3 s wait. Return 28: same. Up 72: same. Walk-marker wait up to 40 s. Screenshot at +5 s. `hatari-shortcut quit`. |
+| Walk marker | Not seen: `walk marker seen=0`. |
+| Screenshots | `grab0001.png` (before keys, SHA-256 `dd8c1c2a296b8f1c271a85781821dc952f9117e9eaf33a12fc66add757081ed9`); `grab0002.png` (after keys, SHA-256 `96f2f3ad4a34ac81fbf5cb26409963c6f0945f31d44027f5927f9ab7c40bc1d8`). Both show the same overhead lake-and-town scene above an empty lower panel. The screen did not change after the keys. |
+
+**Result: the sequence does not enter the walk in OpenUA's PSAVGAMA one-area design.** No
+`dbg_dump_view`, no `DOOR forward`, and no position or edge was observed. This does not
+reproduce the earlier flag-2 door run, whose walk was reached with the same keys. The
+binary is the same `frua.prg`, but the design is not: the flag-2 run used its own candidate design
+and this run uses the default `PSAVGAMA.DSN`. The cause is unexplained. The key sequence alone
+did not enter the walk for this design, and the flag-2 result is not a reproduction of it.
+
+The Hatari log has a `Bus Error reading at address $ffffa200, PC=$e00d98` warning. It appears in
+every run of this design, including attempts 2 to 5, so it is not new here. It was not
+classified, and the earlier "only benign warnings" statement above is revised: this warning is
+recurring and unclassified.
 
 ## Relevant log lines (final run, `evidence/DBG.LOG`)
 
@@ -104,8 +132,10 @@ Absent from every attempt's log: `dbg_dump_view: wrote VIEWDIAG.TXT`, `rm_audit`
 `j200_dump`, every `DOOR forward ...` and `DOOR menu ...` line. The `DBG.LOG` is 77 lines in
 each of attempts 2 to 4.
 
-The Hatari log contains only benign warnings: no GEMDOS dir for `AUTO` and for
-`PSAVGAMA.DSN/SAVE` (the design has no SAVE folder), and font clip warnings.
+The Hatari log contains: no GEMDOS dir for `AUTO` and for `PSAVGAMA.DSN/SAVE`, font clip
+warnings, and a `Bus Error reading at address $ffffa200` warning (see Attempt 5; it is
+unclassified). The earlier statement that the design has no SAVE folder is wrong: attempt 5's
+copy has `PSAVGAMA.DSN/SAVE/*.CCH`, and the source `runtime-savgama/` has the same six files.
 
 ## Input immutability and hashes
 
@@ -141,7 +171,8 @@ belonged to this session.
 
 ## Next step (needs a decision)
 
-The walk is not entered by Return alone, and Up is the forward scan code. A follow-up needs one
-of: (a) an approved non-forward input that advances the title panel (e.g. a Hatari mouse click),
-or (b) permission to send Up as a menu key before the one forward key. Until then this check
-stops at area-2 load.
+Up, Return and Up together did not enter the walk (attempt 5), and Return alone did not either.
+Up is the forward scan code. A follow-up needs one of: (a) an approved non-forward input that
+advances the title panel (e.g. a Hatari mouse click), or (b) an explanation of why the flag-2
+design walked and this one does not (e.g. a compare of the two `GEO002.DAT` designs and their
+start records). Until then this check stops at area-2 load. No further key sequences were sent.
