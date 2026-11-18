@@ -71,6 +71,12 @@
   SAVGAMA has one compatible block; SAVGAMJ remains ambiguous. The area/block join,
   coordinates and facing are hypotheses; the result is not a runtime binding or a
   playable module. See [`por-save-geo-join-plan.md`](por-save-geo-join-plan.md).
+- **Save-to-GEO payload scan** (`tools/por_save_geo_payload_probe.py`): exact-scans
+  the two pinned saves against all 29 decoded GEO blocks, planes, and informative
+  plane windows. It found no full block or informative-window match; the only exact
+  plane matches are all-zero plane 3s shared by two blocks. This excludes only the
+  tested byte-for-byte forms and does not bind a save to an area. See
+  [`por-save-geo-payload-probe.md`](por-save-geo-payload-probe.md).
 
 Every output says what it is. Each file carries `"playable": false`, or a
 MAP-ONLY banner in the report. A test-only AREATEST sweep has now read and
