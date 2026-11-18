@@ -59,6 +59,41 @@ candidate offset `0x0160`; candidate fallthrough then reaches `SAVE` at
 this chain is only a lead for a PoR handler trace, not evidence that the load
 executes.
 
+### WALLDEF inventory cross-check for the ECL1 #24 operands
+
+A read-only run of the existing [PoR wall inventory](por-converter.md) on the
+same local install found block IDs 1, 3, and 5 together in three archives:
+WALLDEF1.DAX, WALLDEF3.DAX, and WALLDEF4.DAX. Each matching block decodes to
+780 bytes and is counted as one record by the inventory's stated 780-byte
+layout convention. That size convention is a structural census assumption,
+not a PoR runtime record-semantics finding. The per-archive matches were:
+
+| Archive | IDs present from `{1, 3, 5}` | SHA-256 |
+|---|---|---|
+| WALLDEF1.DAX | 1, 3, 5 | `7a6102b9a38b2400f38d3c3d66460ab889ab7b35bc684c9ac282b80de028ec5a` |
+| WALLDEF2.DAX | 1 | `bfbd4106d6207ea22d0e5862074ddef582ae24772656b9e47251f1b00933995d` |
+| WALLDEF3.DAX | 1, 3, 5 | `86a8b136b0254398c03c31fdf13ebe2d23cf571d473a4f38718578f1479f661e` |
+| WALLDEF4.DAX | 1, 3, 5 | `e1729459c867048b25553beea4681808c958a5501291b9bf931def3463fe70ed` |
+| WALLDEF5.DAX | 1 | `26d2dbab7054fc22fb4ce44019b6e5cb0d981a05d082a4a22b085dbafd0b4802` |
+| WALLDEF6.DAX | 1 | `d1b1ebc727dca3e65d86d4ccbf7f461dca59b64cce173d51bd46f024e5121010` |
+| WALLDEF7.DAX | 1, 3 | `cbb055cf16e516cdfc58cae66fdff21ceaa2f33adbe17321fb57c47f589238aa` |
+| WALLDEF8.DAX | 1, 3 | `1fc950ad158ef1542f13efc1d7ace02e61ba8e49b8042850098386648285bca2` |
+
+This is a structural compatibility check only. The ECL1 block's three values
+are candidate-flow operands, not established PoR block arguments. The repeated
+ID sets do not identify which WALLDEF archive is used, and no ECL-to-area or
+ECL-to-WALLDEF archive binding follows from matching the archive number. The
+existing wall census uses a layout convention borrowed from another title; it
+does not bind any of these ECL values to a runtime load. In particular, the
+`IF_GE` branch and candidate CFG fallthrough at `0x1DB1` remain unresolved.
+
+For provenance, the ECL1.DAX container hash in the candidate census is
+`b1d08075869ef58ae4f08b53d2059b4ea60f0259c35fb6fda44e1c0737c3a4b9`, and the
+decoded ECL1 #24 block hash is
+`bc8cce7550b4c284237499b19fa22b7a9c931fd021e0e73e7eee46abf51ede85`. The
+inventory output was written under the ignored path
+`data/work/por-ecl-loadpieces-operands-walldef-check/`.
+
 The ten linear-only sites occur in ECL2 #9 (`0x07C2`), ECL2 #15 (`0x02A9`),
 ECL4 #21 (`0x030E`), ECL5 #3 (`0x031E`), ECL5 #4 (`0x0BA1`), ECL5 #6
 (`0x036F`), ECL8 #16 (`0x031D`, `0x046E`), and ECL8 #29 (`0x0364`, `0x0695`).
