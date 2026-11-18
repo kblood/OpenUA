@@ -37,6 +37,17 @@ What one run does (every stage is read-only on the install)
      ``ecl-text-diagnostic/``. Both are written under OUT only. A census with
      diagnostics (exit 1) makes the run degraded, not refused; the diagnostic
      still runs over the frames that were found.
+  3c. ECL 0x80 CANDIDATES (optional, ``--por-decode-strings``, requires
+     ``--with-ecl-text``). Walk every TOC block of ECL1..8.DAX in BOTH framing
+     modes (``conservative`` and ``spec-menus``) with ``tools/por_ecl.py``'s
+     ``decode_block(..., por_strings=True)`` and write every complete 0x80 operand
+     as a CANDIDATE record into ``ecl-candidate-strings/``. Both framings are
+     written, and each record says which framings reproduce it, so the framing
+     ambiguity stays visible. Every record and the section carry ``accepted:
+     false``, ``runtime_verified: false``, ``playable: false``. An incomplete walk
+     (any stop other than end-of-block) is recorded as incomplete, and the output
+     never reads a missing string as an absent one. Read-only on the install;
+     written under OUT only.
   4. MANIFEST. Write ``por_pipeline.json`` and ``por_pipeline_report.md``. The
      output holds hashes, counts and statuses only. It has no absolute paths and
      no timestamps, so two runs over the same install are byte-identical. Without
@@ -46,7 +57,7 @@ What one run does (every stage is read-only on the install)
      parent). The install is fingerprinted once more just before publishing; if
      it differs, nothing is published. Otherwise each owned entry of OUT
      (``maps``, ``designs``, ``ecl-census``, ``ecl-text-diagnostic``,
-     ``por_pipeline.json``, ``por_pipeline_report.md``) is renamed aside and the
+     ``ecl-candidate-strings``, ``por_pipeline.json``, ``por_pipeline_report.md``) is renamed aside and the
      staged one is renamed in. Any other file or folder in OUT is left alone. A
      failed rename is rolled back, and the staging folder is removed. A
      refusal leaves OUT as it was, and no run leaves a staging folder behind.
@@ -77,7 +88,8 @@ one plan. Design names are unique across both forms.
 
 Usage
   python3 tools/por_pipeline.py --install "G:/Games/Pool of Radiance" \
-      -o data/work/por-pipeline/retail [--plan plan.json] [--with-ecl-text]
+      -o data/work/por-pipeline/retail [--plan plan.json] [--with-ecl-text] \
+      [--por-decode-strings]
 
 Output folder: must be outside the install and, inside this repository, under
 ``data/`` (git-ignored). Stdlib plus the repo's own tools only.
@@ -93,11 +105,13 @@ Exit codes
   0  every block decoded, every planned design round-tripped, install unchanged
      (and, with --with-ecl-text, the ECL census exited 0)
   1  the run completed but at least one block was refused, a design failed its
-     round-trip, or the ECL census reported diagnostics (the manifest is still
-     written and is the result)
+     round-trip, the ECL census reported diagnostics, or the ECL candidate stage
+     could not read an archive or block (the manifest is still written and is
+     the result). An incomplete candidate walk is NOT an exit 1: it is recorded.
   2  refusal: missing or ambiguous install member (including any ECL1..8.DAX
-     when --with-ecl-text is given), bad plan, refused output location, or the
-     install changed during the run
+     when --with-ecl-text is given), bad plan, refused output location, the
+     install changed during the run, or --por-decode-strings without
+     --with-ecl-text
 """
 from __future__ import annotations
 
@@ -140,12 +154,23 @@ ECL_CENSUS_JSON = "por_ecl_strings.json"
 ECL_CENSUS_MD = "por_ecl_strings_report.md"
 ECL_STATUS = "diagnostic-unaccepted"
 
+# Opt-in 0x80 candidate strings (--por-decode-strings). Written only with the ECL
+# stage; every record and the section are unaccepted, unverified and not playable.
+ECL_CAND_DIR = "ecl-candidate-strings"
+ECL_CAND_JSON = "por_ecl_candidate_strings.json"
+ECL_CAND_MD = "por_ecl_candidate_strings_report.md"
+ECL_CAND_SCHEMA = "openua.por-ecl-candidate-strings"
+ECL_CAND_SCHEMA_VERSION = 0
+ECL_CAND_STATUS = "candidate-unaccepted"
+ECL_CAND_FRAMINGS = pe.FRAMINGS          # both are shown; neither is chosen
+ECL_CAND_EVIDENCE = "pinned-retail-static"
+
 # Output staging. A run builds everything in a fresh folder beside OUT (same
 # parent, so the same volume), and publishes by renaming only the entries the
 # pipeline owns. Anything else already in OUT is never touched.
 STAGE_PREFIX = ".por-pipeline-staging-"
 REPLACED_DIR = ".replaced"          # inside the staging folder: old owned entries
-OWNED_OUTPUTS = ("maps", "designs", ECL_CENSUS_DIR, ECL_DIAG_DIR,
+OWNED_OUTPUTS = ("maps", "designs", ECL_CENSUS_DIR, ECL_DIAG_DIR, ECL_CAND_DIR,
                  "por_pipeline.json", "por_pipeline_report.md")
 
 DOOR_LINE_DEFAULT = (
@@ -189,6 +214,26 @@ ECL_UNSUPPORTED = list(ptd.NOT_CLAIMED) + [
     "it writes no DSN, no design and no FRUA STRG resource.",
     "String frames come from the census walks; an incomplete walk is never read as "
     "an absence of strings.",
+]
+
+ECL_CAND_RECORD_LIMITS = [
+    "candidate codec output: not accepted, not runtime-verified, not playable",
+    "operand boundary depends on the decoder framing mode, which is not PoR-validated",
+    "read from a complete instruction only; not shown to run, be reached, or be displayed",
+]
+ECL_CAND_LIMITS = list(pe.POR_STRING_PROVENANCE["not_established"]) + [
+    "conservative and spec-menus disagree at menu opcodes 0x15 and 0x2B; both framings "
+    "are written, and neither is chosen",
+    "a walk that stops before end-of-block is INCOMPLETE: strings after its stop are not "
+    "read, and the operands of the stopping instruction are not inspected",
+    "an incomplete walk never means a string is absent; no completeness or absence "
+    "claim is made for any archive, block or framing",
+]
+ECL_CAND_NOT_CLAIMED = [
+    "no accepted or playable text: every record and the section carry accepted: false",
+    "no completeness claim for any archive, block or framing",
+    "no FRUA event, STRG resource, DSN or design content is written from these records",
+    "no runtime text binding and no on-screen match",
 ]
 
 
@@ -702,6 +747,195 @@ def stage_ecl_text(install: Path, out: Path) -> dict:
     }
 
 
+def _hex_sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _candidate_records(res: dict, archive: str, file_sha: str, entry, framing: str) -> list[dict]:
+    """Every complete 0x80 operand of one decoded walk, as an unaccepted candidate.
+
+    The payload decode is ``por_ecl.por_string_record`` (via ``decode_block``); this
+    only adds where the operand sits and where it came from. Operands of a stopping
+    instruction are never in ``res["instructions"]``, so they are not listed here.
+    """
+    dec_sha = _hex_sha(res["block"])
+    recs = []
+    for inst in res["instructions"]:
+        for slot in ("operands", "count_operands"):
+            for d in getattr(inst, slot):
+                rec = d.get("por_decoded")
+                if rec is None:
+                    continue
+                out = dict(rec)
+                out.update({
+                    "framing": framing,
+                    "archive": archive,
+                    "toc_index": entry.index,
+                    "block_id": entry.block_id,
+                    "instruction_offset": inst.offset,
+                    "opcode": "0x%02X" % inst.opcode,
+                    "mnemonic": inst.mnemonic,
+                    "operand_slot": slot,
+                    "operand_offset": d["offset"],
+                    "count": d.get("string_len"),
+                    "packed_sha256": d.get("string_sha256"),
+                    "source": {"archive": archive, "file_sha256": file_sha,
+                               "toc_index": entry.index, "block_id": entry.block_id,
+                               "decoded_sha256": dec_sha},
+                    "evidence": {"level": ECL_CAND_EVIDENCE,
+                                 "codec": pe.POR_STRING_PROVENANCE["sources"],
+                                 "framing": framing,
+                                 "framing_basis": "decoder framing mode; not PoR-validated"},
+                    "limits": list(ECL_CAND_RECORD_LIMITS),
+                })
+                recs.append(out)
+    return recs
+
+
+def _walk_summary(res: dict, recs: list[dict]) -> dict:
+    stop = res["stop"]
+    return {
+        "complete": stop.kind == "end-of-block",
+        "stop": {"kind": stop.kind, "offset": stop.offset,
+                 "opcode": None if stop.opcode is None else "0x%02X" % stop.opcode,
+                 "detail": stop.detail},
+        "instructions": len(res["instructions"]),
+        "decoded_end": res["decoded_end"],
+        "tail": {"offset": res["decoded_end"], "length": len(res["tail"]),
+                 "sha256": _hex_sha(res["tail"]),
+                 "note": "raw bytes; not decoded; never counted as strings"},
+        "records": len(recs),
+        "candidate": sum(1 for r in recs if r["status"] == "candidate"),
+        "empty": sum(1 for r in recs if r["status"] == "empty"),
+        "refused": sum(1 for r in recs if r["status"] == "refused"),
+    }
+
+
+def stage_ecl_candidates(install: Path, out: Path) -> dict:
+    """Gather the 0x80 candidate records of ECL1..8 in both framing modes.
+
+    Reads each archive once from the install (read-only), walks every TOC block with
+    ``por_ecl.decode_block(..., por_strings=True)`` in each framing, and writes
+    ``ecl-candidate-strings/`` under OUT only. A block the decoder refuses is recorded
+    as refused and the run goes on. An incomplete walk is recorded as incomplete and is
+    never counted as an absence. Returns the manifest section, which is unaccepted,
+    unverified and not playable.
+    """
+    archives = [(name, locate_member(install, name).read_bytes()) for name in ECL_ARCHIVES]
+    blocks: list[dict] = []
+    records: list[dict] = []
+    archive_rows: list[dict] = []
+    container_errors = 0
+    refused_blocks = 0
+    archives_read = 0
+    for name, data in archives:
+        file_sha = _hex_sha(data)
+        archive_rows.append({"archive": name, "file_sha256": file_sha, "bytes": len(data)})
+        try:
+            entries, _base = pe.parse_dax(data)
+        except pe.EclError as exc:
+            container_errors += 1
+            blocks.append({"archive": name, "status": "container-error",
+                           "reason": str(exc), "file_sha256": file_sha})
+            continue
+        archives_read += 1
+        for e in entries:
+            blk = {"archive": name, "toc_index": e.index, "block_id": e.block_id,
+                   "file_sha256": file_sha}
+            try:
+                walks = {fr: pe.decode_block(data, None, e.index, fr, None, por_strings=True)
+                         for fr in ECL_CAND_FRAMINGS}
+            except pe.EclError as exc:
+                refused_blocks += 1
+                blk.update(status="refused", reason=str(exc))
+                blocks.append(blk)
+                continue
+            per_recs = {fr: _candidate_records(walks[fr], name, file_sha, e, fr)
+                        for fr in ECL_CAND_FRAMINGS}
+            keys = {fr: {(r["operand_slot"], r["operand_offset"], r["packed_sha256"])
+                         for r in per_recs[fr]} for fr in ECL_CAND_FRAMINGS}
+            for fr in ECL_CAND_FRAMINGS:
+                for r in per_recs[fr]:
+                    key = (r["operand_slot"], r["operand_offset"], r["packed_sha256"])
+                    r["also_in"] = [g for g in ECL_CAND_FRAMINGS
+                                    if g != fr and key in keys[g]]
+                records.extend(per_recs[fr])
+            comparison = {"both": len(set.intersection(*keys.values()))}
+            for fr in ECL_CAND_FRAMINGS:
+                others = set().union(*(keys[g] for g in ECL_CAND_FRAMINGS if g != fr))
+                comparison["%s-only" % fr] = len(keys[fr] - others)
+            blk.update(
+                status="decoded",
+                decoded_sha256=_hex_sha(walks[ECL_CAND_FRAMINGS[0]]["block"]),
+                framings={fr: _walk_summary(walks[fr], per_recs[fr])
+                          for fr in ECL_CAND_FRAMINGS},
+                framing_comparison=comparison,
+            )
+            blocks.append(blk)
+
+    records.sort(key=lambda r: (r["archive"], r["toc_index"], r["framing"],
+                                r["operand_offset"], r["operand_slot"]))
+    decoded = [b for b in blocks if b["status"] == "decoded"]
+    complete = {fr: sum(1 for b in decoded if b["framings"][fr]["complete"])
+                for fr in ECL_CAND_FRAMINGS}
+    distinct: dict = {}
+    for r in records:
+        k = (r["archive"], r["toc_index"], r["operand_slot"], r["operand_offset"],
+             r["packed_sha256"])
+        distinct.setdefault(k, set()).add(r["framing"])
+    summary = {
+        "archives_expected": len(ECL_ARCHIVES),
+        "archives_read": archives_read,
+        "container_errors": container_errors,
+        "blocks_decoded": len(decoded),
+        "blocks_refused": refused_blocks,
+        "walks_complete": complete,
+        "walks_incomplete": {fr: len(decoded) - complete[fr] for fr in ECL_CAND_FRAMINGS},
+        "records_total": len(records),
+        "records_by_framing": {fr: sum(1 for r in records if r["framing"] == fr)
+                               for fr in ECL_CAND_FRAMINGS},
+        "records_by_status": {st: sum(1 for r in records if r["status"] == st)
+                              for st in ("candidate", "empty", "refused")},
+        "char_codes_total": sum(len(r.get("char_codes", [])) for r in records),
+        "distinct_string_operands": len(distinct),
+        "agreed_in_both_framings": sum(1 for fs in distinct.values() if len(fs) > 1),
+        "framing_only": {fr: sum(1 for fs in distinct.values() if fs == {fr})
+                         for fr in ECL_CAND_FRAMINGS},
+        "read_errors": container_errors + refused_blocks,
+        "absence_claimed": False,
+    }
+    doc = {
+        "schema": ECL_CAND_SCHEMA, "schema_version": ECL_CAND_SCHEMA_VERSION,
+        "status": ECL_CAND_STATUS, "accepted": False, "runtime_verified": False,
+        "playable": False,
+        "source": {"decoder": "tools/por_ecl.py decode_block(por_strings=True)",
+                   "codec_evidence": ECL_CAND_EVIDENCE,
+                   "codec_sources": list(pe.POR_STRING_PROVENANCE["sources"]),
+                   "fingerprint": "ECL1..8.DAX hashed before and after the run"},
+        "archives": archive_rows,
+        "framings": list(ECL_CAND_FRAMINGS),
+        "summary": summary,
+        "blocks": blocks,
+        "records": records,
+        "limits": list(ECL_CAND_LIMITS),
+        "not_claimed": list(ECL_CAND_NOT_CLAIMED),
+    }
+    cand_dir = out / ECL_CAND_DIR
+    cand_dir.mkdir(parents=True, exist_ok=True)
+    (cand_dir / ECL_CAND_JSON).write_text(
+        json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (cand_dir / ECL_CAND_MD).write_text(render_candidate_report(doc), encoding="utf-8")
+    rels = ["%s/%s" % (ECL_CAND_DIR, ECL_CAND_JSON), "%s/%s" % (ECL_CAND_DIR, ECL_CAND_MD)]
+    return {
+        "status": ECL_CAND_STATUS, "accepted": False, "runtime_verified": False,
+        "playable": False, "dir": ECL_CAND_DIR,
+        "summary": summary,
+        "files": _out_files(out, rels),
+        "limits": list(ECL_CAND_LIMITS),
+        "not_claimed": list(ECL_CAND_NOT_CLAIMED),
+    }
+
+
 # --------------------------------------------------------------------------
 # Manifest and report
 # --------------------------------------------------------------------------
@@ -763,6 +997,8 @@ def render_report(manifest: dict) -> str:
         lines += _render_group(d)
     if "ecl_text" in manifest:
         lines += _render_ecl(manifest["ecl_text"])
+    if "ecl_candidate_strings" in manifest:
+        lines += _render_ecl_candidates(manifest["ecl_candidate_strings"])
     lines += ["", "## Not claimed", ""]
     lines += ["- " + u for u in manifest.get("unsupported", UNSUPPORTED)]
     return "\n".join(lines) + "\n"
@@ -812,6 +1048,83 @@ def _render_ecl(e: dict) -> list[str]:
               % (c["dir"], d["dir"]), "", "ECL not claimed:", ""]
     lines += ["- " + u for u in e["unsupported"]]
     return lines
+
+
+def _render_ecl_candidates(c: dict) -> list[str]:
+    """Pipeline-report section for the opt-in 0x80 candidates (a summary and a pointer)."""
+    s = c["summary"]
+    return ["", "## ECL 0x80 candidate strings (optional; candidate-unaccepted)", "",
+            "**Status: %s. `accepted: false`, `runtime_verified: false`, `playable: false`.** "
+            "Candidate codec output for diagnosis only. Neither framing is chosen, and an "
+            "incomplete walk is not an absence of strings." % c["status"],
+            "",
+            "| Item | Value |", "| --- | ---: |",
+            "| ECL archives read | %d / %d |" % (s["archives_read"], s["archives_expected"]),
+            "| Walks complete (conservative / spec-menus) | %d / %d of %d |"
+            % (s["walks_complete"]["conservative"], s["walks_complete"]["spec-menus"],
+               s["blocks_decoded"]),
+            "| Candidate records (conservative / spec-menus) | %d / %d |"
+            % (s["records_by_framing"]["conservative"], s["records_by_framing"]["spec-menus"]),
+            "| Distinct string operands / agreed in both framings | %d / %d |"
+            % (s["distinct_string_operands"], s["agreed_in_both_framings"]),
+            "| Read errors (container or block refusals) | %d |" % s["read_errors"],
+            "", "Outputs: `%s/` (`%s`, `%s`; hashes in `por_pipeline.json`)."
+            % (c["dir"], ECL_CAND_JSON, ECL_CAND_MD), "", "Candidate strings not claimed:", ""] \
+        + ["- " + u for u in c["not_claimed"]]
+
+
+def _md_cell(text: str) -> str:
+    """One markdown table cell: pipes and backticks would break the table."""
+    return text.replace("|", "\\|").replace("`", "'")
+
+
+def render_candidate_report(doc: dict) -> str:
+    """The full candidate report written beside the JSON. Unaccepted at every row."""
+    s = doc["summary"]
+    lines = ["# ECL 0x80 candidate strings (CANDIDATE, unaccepted)", "",
+             "**`accepted: false`, `runtime_verified: false`, `playable: false`.** Codec "
+             "output for diagnosis only. No string is accepted, no block or framing is "
+             "declared complete for absence, and nothing is written to a DSN or STRG.", "",
+             "## Framings (both shown; neither is chosen)", "",
+             "| Framing | Complete walks | Incomplete walks | Records | Operands only in this framing |",
+             "| --- | ---: | ---: | ---: | ---: |"]
+    for fr in doc["framings"]:
+        lines.append("| %s | %d | %d | %d | %d |" % (
+            fr, s["walks_complete"][fr], s["walks_incomplete"][fr],
+            s["records_by_framing"][fr], s["framing_only"][fr]))
+    lines += ["", "Distinct string operands: %d; reproduced by both framings: %d."
+              % (s["distinct_string_operands"], s["agreed_in_both_framings"]),
+              "", "## Blocks", "",
+              "| Archive | TOC | block id | status | conservative | spec-menus | framing comparison |",
+              "| --- | ---: | ---: | --- | --- | --- | --- |"]
+    for b in doc["blocks"]:
+        if b["status"] != "decoded":
+            lines.append("| %s | - | - | %s: %s | | | |" % (
+                b["archive"], b["status"], _md_cell(b.get("reason", ""))))
+            continue
+        cells = []
+        for fr in doc["framings"]:
+            f = b["framings"][fr]
+            if f["complete"]:
+                cells.append("complete, %d records" % f["records"])
+            else:
+                cells.append("INCOMPLETE at %d (%s), %d records"
+                             % (f["stop"]["offset"], f["stop"]["kind"], f["records"]))
+        cmp_ = b["framing_comparison"]
+        lines.append("| %s | %d | %d | decoded | %s | %s | both %d; %s |" % (
+            b["archive"], b["toc_index"], b["block_id"], cells[0], cells[1], cmp_["both"],
+            ", ".join("%s-only %d" % (fr, cmp_["%s-only" % fr]) for fr in doc["framings"])))
+    lines += ["", "## Candidate records", "",
+              "| Framing | Archive | TOC | Operand offset | Count | Status | Also in | Candidate text |",
+              "| --- | --- | ---: | ---: | ---: | --- | --- | --- |"]
+    for r in doc["records"]:
+        lines.append("| %s | %s | %d | %d | %s | %s | %s | `%s` |" % (
+            r["framing"], r["archive"], r["toc_index"], r["operand_offset"],
+            "-" if r["count"] is None else r["count"], r["status"],
+            ", ".join(r["also_in"]) or "none", _md_cell(r.get("candidate_text", ""))))
+    lines += ["", "## Limits", ""] + ["- " + u for u in doc["limits"]]
+    lines += ["", "## Not claimed", ""] + ["- " + u for u in doc["not_claimed"]]
+    return "\n".join(lines) + "\n"
 
 
 def _move(src: Path, dst: Path) -> None:
@@ -892,6 +1205,7 @@ def _publish(staging: Path, out: Path, created: list[Path]) -> None:
 
 def run(install: Path, out: Path, plan: Optional[Path], *,
         with_ecl_text: bool = False,
+        por_decode_strings: bool = False,
         flag2_passability: Optional[int] = None) -> tuple[dict, int]:
     """Run every stage into a staging folder beside OUT, then publish.
 
@@ -910,6 +1224,9 @@ def run(install: Path, out: Path, plan: Optional[Path], *,
             or not isinstance(flag2_passability, int)
             or not (0 <= flag2_passability <= 15)):
         raise PorPipelineError("candidate flag-2 passability must be an integer 0..15")
+    if por_decode_strings and not with_ecl_text:
+        raise PorPipelineError("--por-decode-strings needs --with-ecl-text: its inputs are "
+                               "the ECL archives that flag fingerprints and walks")
     if not install.is_dir():
         raise PorPipelineError("install folder not found")
     out = Path(out)
@@ -941,6 +1258,7 @@ def run(install: Path, out: Path, plan: Optional[Path], *,
         blocks = stage_blocks(install, staging, flag2_passability)
         designs = stage_designs(install, staging, designs_plan, flag2_passability)
         ecl = stage_ecl_text(install, staging) if with_ecl_text else None
+        cand = stage_ecl_candidates(install, staging) if por_decode_strings else None
 
         manifest = {
             "schema": SCHEMA,
@@ -958,6 +1276,8 @@ def run(install: Path, out: Path, plan: Optional[Path], *,
             manifest["candidate"] = candidate_block(flag2_passability)
         if ecl is not None:
             manifest["ecl_text"] = ecl
+        if cand is not None:
+            manifest["ecl_candidate_strings"] = cand
         (staging / "por_pipeline.json").write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         (staging / "por_pipeline_report.md").write_text(
@@ -982,7 +1302,8 @@ def run(install: Path, out: Path, plan: Optional[Path], *,
 
     s = manifest["summary"]
     clean = (s["blocks_refused"] == 0 and s["designs_failed"] == 0
-             and (ecl is None or ecl["census"]["exit"] == 0))
+             and (ecl is None or ecl["census"]["exit"] == 0)
+             and (cand is None or cand["summary"]["read_errors"] == 0))
     return manifest, 0 if clean else 1
 
 
@@ -998,6 +1319,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--with-ecl-text", action="store_true",
                     help="also run the ECL string census and the unaccepted 6-bit "
                          "diagnostic over ECL1..8.DAX (requires all eight)")
+    ap.add_argument("--por-decode-strings", action="store_true",
+                    help="OPT-IN, requires --with-ecl-text: also write the ECL 0x80 CANDIDATE "
+                         "strings (both framings, unaccepted, playable=false) into "
+                         "ecl-candidate-strings/. Default off")
     ap.add_argument("--candidate-flag2-passable", type=int, default=None, metavar="N",
                     help="OPT-IN CANDIDATE ONLY (default: off): encode door flag 2 as "
                          "OpenUA passability N (0..15) instead of 15 in every map and "
@@ -1006,6 +1331,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     try:
         manifest, code = run(args.install, args.out, args.plan,
                              with_ecl_text=args.with_ecl_text,
+                             por_decode_strings=args.por_decode_strings,
                              flag2_passability=args.candidate_flag2_passable)
     except (PorPipelineError, PorSourceError, pm.PorMapError, GeoError) as exc:
         print("por_pipeline: error: %s" % exc, file=sys.stderr)
@@ -1021,6 +1347,14 @@ def main(argv: Optional[list[str]] = None) -> int:
               "%d diagnostic frames (none accepted)"
               % (e["status"], e["census"]["exit"], sum(e["census"]["string_frames_by_framing"].values()),
                  e["diagnostic"]["frames_total"]))
+    if "ecl_candidate_strings" in manifest:
+        c = manifest["ecl_candidate_strings"]["summary"]
+        print("por_pipeline: ECL 0x80 candidates %s, accepted=false, playable=false; "
+              "%d records (conservative %d, spec-menus %d); walks complete %d/%d and %d/%d "
+              "(incomplete walks are not absences)"
+              % (ECL_CAND_STATUS, c["records_total"], c["records_by_framing"]["conservative"],
+                 c["records_by_framing"]["spec-menus"], c["walks_complete"]["conservative"],
+                 c["blocks_decoded"], c["walks_complete"]["spec-menus"], c["blocks_decoded"]))
     if "candidate" in manifest:
         print("por_pipeline: OPT-IN CANDIDATE: flag 2 as passability %d (default 15); "
               "not verified, not the default, playable=false"

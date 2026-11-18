@@ -244,7 +244,11 @@ decodes every GEO block, round-trips any planned design, runs the loader-equival
 host checks on each emitted `NAME.DSN` folder, and writes a manifest.
 With `--with-ecl-text` it also runs the ECL string census and the
 diagnostic-unaccepted 6-bit decode over ECL1..ECL8. Neither stage runs the game,
-binds art, or makes a string accepted text.
+binds art, or makes a string accepted text. With `--por-decode-strings` (which
+requires `--with-ecl-text`) it also writes the ECL 0x80 **candidate** records, in
+both framing modes, into `ecl-candidate-strings/`. Every record is
+`accepted: false`, `runtime_verified: false`, `playable: false`. See "ECL 0x80
+candidate strings" below.
 
 The optional `--candidate-flag2-passable N` setting (0..15, default off) applies
 N to flag-2 walls in normalized maps and planned flat or grouped designs. The
@@ -264,6 +268,10 @@ python3 tools/por_pipeline.py --install "G:/Games/Pool of Radiance" \
 # map-only plus the ECL census and unaccepted text diagnostic
 python3 tools/por_pipeline.py --install "G:/Games/Pool of Radiance" \
     -o data/work/por-pipeline/retail-ecl --with-ecl-text
+
+# the same, plus the unaccepted ECL 0x80 candidate strings (both framings)
+python3 tools/por_pipeline.py --install "G:/Games/Pool of Radiance" \
+    -o data/work/por-pipeline/retail-ecl-cand --with-ecl-text --por-decode-strings
 ```
 
 - The install folder may be the folder above `POOLRAD` (GOG) or the flat layout.
@@ -424,6 +432,46 @@ event or message is produced.
 - Without the flag the manifest is exactly the map-only manifest, with no
   `ecl_text` key, and no `ecl-*` folder is created.
 
+### ECL 0x80 candidate strings (`--por-decode-strings`, opt-in)
+
+Requires `--with-ecl-text`. Without it the run refuses (exit 2) before anything is
+staged. Its inputs are the same eight ECL archives that flag fingerprints before
+and after the run.
+
+| Folder | Files | Source | Status |
+| --- | --- | --- | --- |
+| `ecl-candidate-strings/` | `por_ecl_candidate_strings.json`, `por_ecl_candidate_strings_report.md` | `tools/por_ecl.py` `decode_block(..., por_strings=True)` | `candidate-unaccepted`, `accepted: false`, `playable: false` |
+
+- **Both framings are written.** Every TOC block is walked in `conservative` and in
+  `spec-menus`. The two disagree at menu opcodes 0x15 and 0x2B, and neither framing is
+  PoR-validated, so the run does not choose one. A record carries `also_in`, the
+  framings that reproduce the same operand offset and packed payload. The summary
+  counts how many distinct operands both framings reproduce and how many only one
+  does.
+- **Incomplete walks are recorded, not read as absence.** A walk that stops before
+  end-of-block is marked `complete: false` with its stop kind and offset. Strings
+  after the stop are not read, and the stopping instruction's operands are not
+  inspected. The summary sets `absence_claimed: false`. Nothing in the output says
+  that a block or framing has no strings.
+- **Every record and the section are unaccepted.** Each record carries
+  `accepted: false`, `runtime_verified: false` and `playable: false`, plus its
+  source (archive name, file SHA-256, TOC index, block id, decoded SHA-256),
+  evidence level (`pinned-retail-static`), framing, and limits. The candidate text
+  is the codec output in escaped form.
+- **Read-only and path-free.** The install is read with `rb` and fingerprinted
+  before and after, like the GEO and ECL members. Outputs hold archive names and
+  hashes only. Two runs over the same install are byte-identical.
+- **Degraded, not refused, on unreadable input.** A container error or a refused
+  block is recorded and the run exits `1`. An incomplete walk does not change the exit
+  code.
+- **Not written anywhere else.** No DSN, design, FRUA STRG resource, or event is
+  produced from these records. The design folders are unchanged by this flag.
+- **Owned output.** `ecl-candidate-strings/` is pipeline-owned like `ecl-census/`:
+  it is replaced on a rerun with the flag and removed on a rerun without it.
+- `por_pipeline.json` gains an `ecl_candidate_strings` section only when the flag is
+  set. Without the flag, the manifest and report are byte-identical to the previous
+  pipeline (pinned by a test).
+
 ### Status and limits (read before using the ECL output)
 
 - The ECL diagnostic is **diagnostic-unaccepted**. It applies the retail-verified
@@ -463,8 +511,14 @@ that runs on the staged copy before publish, deterministic path-free output, and
 round-tripped
 GEOs (and GEO bytes equal to the flat-row output), malformed groups, duplicate area
 numbers and block references, a missing start area, a refused area that writes no
-folder, and a playable=false check that no events, art, text or STRG is emitted. A
-retail-gated test runs only when the local install has the ECL archives. Run only
+folder, and a playable=false check that no events, art, text or STRG is emitted. The
+candidate-string tests pin the disabled path to the pre-change golden hashes of the
+map-only and `--with-ecl-text` outputs, and cover the enabled section on a
+synthetic fixture, the accepted:false check on every record, ambiguous framing shown
+in both modes, an incomplete walk that never implies absence, the refusal without
+`--with-ecl-text`, missing and changed inputs, a degraded unreadable archive,
+determinism and path hygiene, the install and design folders left unwritten, and the
+CLI flag. A retail-gated test runs only when the local install has the ECL archives. Run only
 this file with `python -m pytest tests/test_por_pipeline.py`.
 
 ---

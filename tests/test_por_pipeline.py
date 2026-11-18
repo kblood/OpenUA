@@ -1067,3 +1067,296 @@ def test_engine_is_never_claimed_as_run_or_loaded(tmp_path):
     report = (out / "por_pipeline_report.md").read_text(encoding="utf-8")
     assert "engine NOT run" in report
     assert "Loader-equivalent checks (tools/por_dsn_load_smoke.py) are host readings" in report
+
+
+# ---- opt-in ECL 0x80 candidate strings (--por-decode-strings) ----------------
+# Synthetic ECL blocks only. Every record and the section must say accepted:false,
+# runtime_verified:false, playable:false. Incomplete walks are never absences.
+
+CAND_DIR = "ecl-candidate-strings"
+CAND_JSON = "por_ecl_candidate_strings.json"
+CAND_MD = "por_ecl_candidate_strings_report.md"
+
+# Pinned from the PRE-CHANGE pipeline (HEAD 97e5d8ec, before this feature) over the
+# synthetic fixture used below. Any change to the default or --with-ecl-text output fails.
+PRE_CHANGE_GOLDEN = {
+    "map-only": {"json": "e39b88868f76519280be1f7163645d4d115ab5e1055e5bdef072156cfda20631",
+                 "report": "4baa581135b83f3d5f8b52e42b67d0dce49b0d37515c4784846d6e833b1bdc88",
+                 "tree": "7ff8055cf31aa832b77909f789c01a227a4790cdd7780a29b79e6001c5a33c52"},
+    "ecl-text": {"json": "8e941c2a73ba46c73102eb0759e0b355edbef87dee06471209e3b572629aac03",
+                 "report": "75712d8ccee1335f64be619ac00aa7908912e5c3373e049b711f962fc7501bbe",
+                 "tree": "74d7f36943322c11133804cea41836352fa6a28cc5c9ec29817daad0bfd33c91"},
+}
+
+
+def _golden_hashes(out: Path) -> dict:
+    return {
+        "json": hashlib.sha256((out / "por_pipeline.json").read_bytes()).hexdigest(),
+        "report": hashlib.sha256((out / "por_pipeline_report.md").read_bytes()).hexdigest(),
+        "tree": hashlib.sha256(json.dumps(_tree(out), sort_keys=True).encode()).hexdigest(),
+    }
+
+
+def _write_ecl(install: Path, n: int, data: bytes) -> None:
+    """Replace ECL<n>.DAX in the POOLRAD folder with raw archive bytes."""
+    (install / "POOLRAD" / ("ECL%d.DAX" % n)).write_bytes(data)
+
+
+def _write_block(install: Path, n: int, body: bytes) -> None:
+    """A one-block ECL<n>.DAX whose ECL block is ``body`` after the 22-byte header."""
+    _write_ecl(install, n, make_dax([(18, ecl_block(body))]))
+
+
+def _cand_doc(out: Path) -> dict:
+    return json.loads((out / CAND_DIR / CAND_JSON).read_text(encoding="utf-8"))
+
+
+def _cand_blocks(doc: dict, archive: str) -> list:
+    return [b for b in doc["blocks"] if b["archive"] == archive]
+
+
+def test_disabled_path_matches_pre_change_golden_outputs(tmp_path):
+    install = make_full_install(tmp_path, ecl=True)
+    plan = _plan(tmp_path, [_good_design(), _group()])
+    default = tmp_path / "map-only"
+    pp.run(install, default, plan)
+    assert _golden_hashes(default) == PRE_CHANGE_GOLDEN["map-only"]
+    ecl = tmp_path / "ecl-text"
+    pp.run(install, ecl, plan, with_ecl_text=True)
+    assert _golden_hashes(ecl) == PRE_CHANGE_GOLDEN["ecl-text"]
+
+
+def test_flag_off_adds_no_candidate_section_or_folder(tmp_path):
+    install = make_full_install(tmp_path, ecl=True)
+    out = tmp_path / "out"
+    manifest, code = pp.run(install, out, None, with_ecl_text=True)
+    assert code == 0
+    assert "ecl_candidate_strings" not in manifest
+    assert not (out / CAND_DIR).exists()
+    assert "candidate" not in (out / "por_pipeline_report.md").read_text(encoding="utf-8").lower()
+
+
+def test_enabled_run_adds_candidate_output_on_the_synthetic_fixture(tmp_path):
+    install = make_full_install(tmp_path, ecl=True)
+    out = tmp_path / "out"
+    manifest, code = pp.run(install, out, None, with_ecl_text=True, por_decode_strings=True)
+    assert code == 0
+    c = manifest["ecl_candidate_strings"]
+    assert c["status"] == "candidate-unaccepted"
+    assert c["dir"] == CAND_DIR
+    s = c["summary"]
+    assert s["archives_read"] == 8 and s["blocks_decoded"] == 8 and s["read_errors"] == 0
+    # Each fixture block is a complete walk with two 0x80 operands, in both framings.
+    assert s["walks_complete"] == {"conservative": 8, "spec-menus": 8}
+    assert s["walks_incomplete"] == {"conservative": 0, "spec-menus": 0}
+    assert s["records_by_framing"] == {"conservative": 16, "spec-menus": 16}
+    assert s["agreed_in_both_framings"] == 16
+    assert s["framing_only"] == {"conservative": 0, "spec-menus": 0}
+    assert sorted(os.listdir(out / CAND_DIR)) == sorted([CAND_JSON, CAND_MD])
+    # Manifest hashes match the files on disk.
+    for row in c["files"]:
+        data = (out / row["path"]).read_bytes()
+        assert row["bytes"] == len(data)
+        assert row["sha256"] == hashlib.sha256(data).hexdigest()
+    report = (out / "por_pipeline_report.md").read_text(encoding="utf-8")
+    assert "ECL 0x80 candidate strings" in report and "`accepted: false`" in report
+
+
+def test_every_record_and_the_section_are_unaccepted(tmp_path):
+    install = make_full_install(tmp_path, ecl=True)
+    out = tmp_path / "out"
+    manifest, _ = pp.run(install, out, None, with_ecl_text=True, por_decode_strings=True)
+    doc = _cand_doc(out)
+    assert doc["records"], "fixture should yield candidate records"
+    for top in (doc, manifest["ecl_candidate_strings"]):
+        assert top["accepted"] is False and top["runtime_verified"] is False
+        assert top["playable"] is False
+    for r in doc["records"]:
+        assert r["accepted"] is False and r["runtime_verified"] is False and r["playable"] is False
+        assert r["status"] in ("candidate", "empty", "refused")
+        # provenance and limits travel with every record
+        assert r["source"]["archive"] in ECL_NAMES and len(r["source"]["file_sha256"]) == 64
+        assert r["source"]["decoded_sha256"] and r["evidence"]["level"] == "pinned-retail-static"
+        assert r["limits"] and any("not accepted" in x for x in r["limits"])
+    text = (out / CAND_DIR / CAND_JSON).read_text(encoding="utf-8")
+    assert '"accepted": true' not in text and '"runtime_verified": true' not in text
+    assert '"playable": true' not in text
+
+
+def test_ambiguous_framing_is_shown_in_both_modes_not_chosen(tmp_path):
+    install = make_full_install(tmp_path, ecl=True)
+    # PRINT string, then a VERTICAL_MENU (0x15). Conservative stops at the menu; spec-menus
+    # frames it (count 0) and reaches the INPUT string and EXIT.
+    _write_block(install, 3, ins(0x11, strop(b"\x01\x02")) + ins(0x15, lit(0), lit(0), lit(0))
+                 + ins(0x0F, lit(0), strop(b"zz")) + EXIT)
+    out = tmp_path / "out"
+    manifest, code = pp.run(install, out, None, with_ecl_text=True, por_decode_strings=True)
+    assert code == 0
+    doc = _cand_doc(out)
+    (b3,) = _cand_blocks(doc, "ECL3.DAX")
+    cons, spec = b3["framings"]["conservative"], b3["framings"]["spec-menus"]
+    assert cons["complete"] is False and cons["stop"]["kind"] == "ambiguous-framing"
+    assert cons["stop"]["opcode"] == "0x15"
+    assert spec["complete"] is True and spec["stop"]["kind"] == "end-of-block"
+    assert b3["framing_comparison"] == {"both": 1, "conservative-only": 0, "spec-menus-only": 1}
+    recs = [r for r in doc["records"] if r["archive"] == "ECL3.DAX"]
+    prints = [r for r in recs if r["mnemonic"] == "PRINT"]
+    inputs = [r for r in recs if r["mnemonic"] == "INPUT_NUMBER"]
+    assert sorted(r["framing"] for r in prints) == ["conservative", "spec-menus"]
+    for r in prints:
+        other = "spec-menus" if r["framing"] == "conservative" else "conservative"
+        assert r["also_in"] == [other]
+    assert [r["framing"] for r in inputs] == ["spec-menus"]     # only where it is reached
+    assert inputs[0]["also_in"] == []
+    assert doc["summary"]["walks_incomplete"] == {"conservative": 1, "spec-menus": 0}
+    assert doc["summary"]["framing_only"] == {"conservative": 0, "spec-menus": 1}
+    report = (out / CAND_DIR / CAND_MD).read_text(encoding="utf-8")
+    assert "INCOMPLETE at 27 (ambiguous-framing)" in report
+    assert "## Framings (both shown; neither is chosen)" in report
+
+
+def test_incomplete_walk_never_implies_an_absent_string(tmp_path):
+    install = make_full_install(tmp_path, ecl=True)
+    # An unknown opcode (0xFE) after one string. The second string sits after the stop.
+    _write_block(install, 4, ins(0x11, strop(b"\x01\x02")) + b"\xfe"
+                 + ins(0x11, strop(b"\x03\x04")) + EXIT)
+    out = tmp_path / "out"
+    _, code = pp.run(install, out, None, with_ecl_text=True, por_decode_strings=True)
+    assert code == 0
+    doc = _cand_doc(out)
+    (b4,) = _cand_blocks(doc, "ECL4.DAX")
+    for fr in ("conservative", "spec-menus"):
+        assert b4["framings"][fr]["complete"] is False
+        assert b4["framings"][fr]["stop"]["kind"] == "unknown-opcode"
+        assert b4["framings"][fr]["stop"]["opcode"] == "0xFE"
+    recs = [r for r in doc["records"] if r["archive"] == "ECL4.DAX"]
+    assert recs and all(r["operand_offset"] < 27 for r in recs), \
+        "a string after the stop must not be read"
+    assert doc["summary"]["absence_claimed"] is False
+    assert doc["summary"]["walks_incomplete"] == {"conservative": 1, "spec-menus": 1}
+    report = (out / CAND_DIR / CAND_MD).read_text(encoding="utf-8")
+    assert "INCOMPLETE at 27 (unknown-opcode)" in report
+    assert "no block or framing is declared complete for absence" in report
+    assert any("INCOMPLETE" in u for u in doc["limits"])
+
+
+def test_por_decode_strings_without_with_ecl_text_is_refused_before_output(tmp_path, capsys):
+    install = make_full_install(tmp_path, ecl=True)
+    out = tmp_path / "out"
+    with pytest.raises(pp.PorPipelineError, match="needs --with-ecl-text"):
+        pp.run(install, out, None, por_decode_strings=True)
+    assert not out.exists() and _staging_left(tmp_path) == []
+    code = pp.main(["--install", str(install), "-o", str(out), "--por-decode-strings"])
+    assert code == 2
+    assert "needs --with-ecl-text" in capsys.readouterr().err
+
+
+def test_candidate_missing_member_is_refused_and_writes_nothing(tmp_path):
+    install = make_full_install(tmp_path, ecl=True)
+    (install / "POOLRAD" / "ECL5.DAX").unlink()
+    out = tmp_path / "out"
+    with pytest.raises(pp.PorPipelineError, match="ECL5.DAX"):
+        pp.run(install, out, None, with_ecl_text=True, por_decode_strings=True)
+    assert not out.exists()
+
+
+def test_candidate_input_changed_during_the_stage_publishes_nothing(tmp_path, monkeypatch):
+    install = make_full_install(tmp_path, ecl=True)
+    real = pp.stage_ecl_candidates
+
+    def then_touch(inst, staging):
+        result = real(inst, staging)
+        (install / "POOLRAD" / "ECL3.DAX").write_bytes(b"changed during the candidate stage")
+        return result
+
+    monkeypatch.setattr(pp, "stage_ecl_candidates", then_touch)
+    out = tmp_path / "out"
+    with pytest.raises(pp.PorPipelineError, match="install changed"):
+        pp.run(install, out, None, with_ecl_text=True, por_decode_strings=True)
+    assert not (out / "por_pipeline.json").exists()
+    assert not (out / CAND_DIR).exists()
+    assert _staging_left(tmp_path) == []
+
+
+def test_unreadable_archive_is_degraded_and_the_rest_still_walk(tmp_path):
+    install = make_full_install(tmp_path, ecl=True)
+    _write_ecl(install, 2, b"\xff" * 64)                  # container error on ECL2
+    out = tmp_path / "out"
+    manifest, code = pp.run(install, out, None, with_ecl_text=True, por_decode_strings=True)
+    assert code == 1                                      # degraded, not refused
+    c = manifest["ecl_candidate_strings"]
+    assert c["summary"]["container_errors"] == 1 and c["summary"]["read_errors"] == 1
+    assert c["summary"]["archives_read"] == 7
+    doc = _cand_doc(out)
+    (row,) = [b for b in doc["blocks"] if b["archive"] == "ECL2.DAX"]
+    assert row["status"] == "container-error"
+    assert c["summary"]["records_by_framing"] == {"conservative": 14, "spec-menus": 14}
+
+
+def test_candidate_outputs_are_deterministic_and_path_free(tmp_path):
+    install = make_full_install(tmp_path, ecl=True)
+    plan = _plan(tmp_path, [_good_design()])
+    a, b = tmp_path / "a", tmp_path / "b"
+    ma, _ = pp.run(install, a, plan, with_ecl_text=True, por_decode_strings=True)
+    mb, _ = pp.run(install, b, plan, with_ecl_text=True, por_decode_strings=True)
+    assert ma["ecl_candidate_strings"] == mb["ecl_candidate_strings"]
+    for rel in (CAND_JSON, CAND_MD):
+        assert (a / CAND_DIR / rel).read_bytes() == (b / CAND_DIR / rel).read_bytes(), rel
+    for rel in ("por_pipeline.json", "por_pipeline_report.md",
+                CAND_DIR + "/" + CAND_JSON, CAND_DIR + "/" + CAND_MD):
+        text = (a / rel).read_text(encoding="utf-8")
+        assert str(tmp_path) not in text and tmp_path.as_posix() not in text, rel
+        assert ":/" not in text and ":\\" not in text, rel
+
+
+def test_candidate_stage_never_writes_the_install_designs_or_strg(tmp_path):
+    install = make_full_install(tmp_path, ecl=True)
+    before = _tree(install)
+    plan = _plan(tmp_path, [_good_design()])
+    off, on = tmp_path / "off", tmp_path / "on"
+    pp.run(install, off, plan, with_ecl_text=True)
+    pp.run(install, on, plan, with_ecl_text=True, por_decode_strings=True)
+    assert _tree(install) == before
+    assert _tree(on / "designs") == _tree(off / "designs")
+    for p in (on / CAND_DIR).rglob("*"):
+        assert "STRG" not in p.name.upper() and p.suffix.upper() != ".DSN"
+
+
+def test_rerun_without_the_flag_removes_stale_candidate_output(tmp_path):
+    install = make_full_install(tmp_path, ecl=True)
+    plan = _plan(tmp_path, [_good_design()])
+    out = tmp_path / "out"
+    pp.run(install, out, plan, with_ecl_text=True, por_decode_strings=True)
+    assert (out / CAND_DIR).is_dir()
+    (out / "sentinel.txt").write_bytes(b"keep")
+    manifest, _ = pp.run(install, out, plan, with_ecl_text=True)
+    assert "ecl_candidate_strings" not in manifest and not (out / CAND_DIR).exists()
+    assert (out / "sentinel.txt").read_bytes() == b"keep"
+
+
+def test_cli_por_decode_strings_flag(tmp_path, capsys):
+    install = make_full_install(tmp_path, ecl=True)
+    out = tmp_path / "ok"
+    assert pp.main(["--install", str(install), "-o", str(out), "--with-ecl-text",
+                    "--por-decode-strings"]) == 0
+    msg = capsys.readouterr().out
+    assert "ECL 0x80 candidates candidate-unaccepted, accepted=false, playable=false" in msg
+    assert "incomplete walks are not absences" in msg
+    assert (out / CAND_DIR / CAND_JSON).is_file()
+
+
+def test_refused_block_is_recorded_as_a_read_error_and_the_run_goes_on(tmp_path):
+    install = make_full_install(tmp_path, ecl=True)
+    # A block without the ECL magic word: the decoder refuses it; the others still walk.
+    _write_ecl(install, 6, make_dax([(18, b"\x00" * 30)]))
+    out = tmp_path / "out"
+    manifest, code = pp.run(install, out, None, with_ecl_text=True, por_decode_strings=True)
+    assert code == 1
+    s = manifest["ecl_candidate_strings"]["summary"]
+    assert s["blocks_refused"] == 1 and s["read_errors"] == 1
+    assert s["blocks_decoded"] == 7
+    doc = _cand_doc(out)
+    (row,) = _cand_blocks(doc, "ECL6.DAX")
+    assert row["status"] == "refused" and "magic" in row["reason"]
+    report = (out / CAND_DIR / CAND_MD).read_text(encoding="utf-8")
+    assert "| ECL6.DAX | - | - | refused:" in report
