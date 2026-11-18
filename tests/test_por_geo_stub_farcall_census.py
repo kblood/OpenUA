@@ -22,7 +22,7 @@ RETAIL = os.environ.get("OPENUA_POR_INSTALL")
 needs_retail = pytest.mark.skipif(not RETAIL, reason="OPENUA_POR_INSTALL not set")
 
 HDR = 0x200
-GEO = c.GEO_STUB_F  # 15884 == 0x3E0C
+S6 = c.STUB6_F  # 15884 == 0x3E0C
 
 
 def _group(fileofs, codesz, procs=(0x10,), valid=None, fixupsz=0, status="well-formed"):
@@ -49,9 +49,9 @@ def _far(seg, off):
 # Residue and literal rule (integers)
 # ---------------------------------------------------------------------------------------------
 
-def test_geo_stub_is_0x3e0c_and_needs_residue_c():
-    assert GEO == 0x3E0C
-    assert (GEO - HDR) % 16 == 0xC
+def test_stub6_is_0x3e0c_and_needs_residue_c():
+    assert S6 == 0x3E0C
+    assert (S6 - HDR) % 16 == 0xC
 
 
 def test_listed_seg_with_residue_c_is_residue_candidate_with_di_constraint():
@@ -73,7 +73,7 @@ def test_listed_seg_with_offset_one_past_c_is_incompatible_with_skew_15():
 def test_listed_seg_residue_is_offset_only_not_seg_dependent():
     rec = c.site_eval(0x110, 0x0100, 0x1C, 0x100, {0x13}, HDR)
     assert rec["status"] == c.SITE_CANDIDATE_RESIDUE
-    assert rec["di_constraint_mod64k"] == ((GEO - HDR - 0x1C) // 16 - 0x0100) % c.SEG_MOD
+    assert rec["di_constraint_mod64k"] == ((S6 - HDR - 0x1C) // 16 - 0x0100) % c.SEG_MOD
 
 
 def test_unlisted_seg_literal_exact_hit_is_candidate():
@@ -201,9 +201,9 @@ def test_decode_is_deterministic():
     assert a == b
 
 
-def test_geo_constants_agree_with_the_0x2e8f7_group_and_proc():
-    assert c.GEO_GROUP_FILEOFS + c.GEO_PROC == c.GEO_BODY == 0x2F6FF
-    assert c.GEO_STUB_BYTES == bytes.fromhex("cd 3f 08 0e 00")
+def test_stub6_constants_agree_with_the_0x2e8f7_group_and_proc():
+    assert c.STUB6_GROUP_FILEOFS + c.STUB6_PROC == c.WALLDEF_BODY == 0x2F6FF
+    assert c.STUB6_BYTES == bytes.fromhex("cd 3f 08 0e 00")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -244,11 +244,11 @@ def test_retail_pins_match():
 
 
 @needs_retail
-def test_retail_geo_precondition_holds():
+def test_retail_stub6_precondition_holds():
     ovr, start = _retail()
     doc = c.analyse(start, ovr)
     assert all(v for k, v in doc["precondition"].items() if isinstance(v, bool))
-    assert doc["geo_body_decoded"] is True
+    assert doc["walldef_body_decoded"] is True
 
 
 @needs_retail
@@ -260,7 +260,7 @@ def test_retail_parsed_groups_and_far_call_totals():
     assert t["partial_groups"] == 10
     assert t["far_call_sites"] == 3993
     assert t["far_call_owner_rows"] == 3993
-    assert t["near_calls_to_geo_body"] == 0
+    assert t["near_calls_to_walldef_body"] == 0
 
 
 @needs_retail
@@ -276,7 +276,7 @@ def test_retail_candidate_count_is_residue_base_rate_not_a_hit():
     ovr, start = _retail()
     v = c.analyse(start, ovr)["verdict"]
     assert v["candidate_count"] == 181
-    assert v["geo_status"] == c.STATUS_CANDIDATE
+    assert v["stub6_status"] == c.STATUS_CANDIDATE
 
 
 @needs_retail

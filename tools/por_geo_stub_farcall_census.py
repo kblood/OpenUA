@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Pool of Radiance: PoR-wide static census of far calls toward the GEO load stub (STATIC, DIAGNOSTIC).
+"""Pool of Radiance: PoR-wide static census of far calls toward START stub 6 (STATIC, DIAGNOSTIC).
+
+Naming. The ``geo`` in this file name and in its identifiers is historical. Stub 6 (proc ``0x0E08``) enters the
+WALLDEF wrapper at ``GAME.OVR:0x2F6FF`` (it builds ``WALLDEF<d>.dax``; see ``docs/por-ecl-stub6-key-arg-probe.md``),
+not the GEO fill at ``GAME.OVR:0x2F9BE``. Every result here is about stub 6 and the WALLDEF wrapper.
 
 STATUS: static-probe-only. ``playable: false``. No events, no mappings, no module output.
 
-Question. The GEO stub is ``START.EXE`` offset ``15884`` (``0x3E0C``): stub index 6 of the VROOMM group at
-header ``0x3DD7`` (partial; stub run at header+``0x17``), proc ``0x0E08`` into the GEO body ``GAME.OVR:0x2F6FF``
-(group fileofs ``0x2E8F7``). Across every parsed GAME.OVR overlay body, which instruction-decoded far calls
-(``9A seg:off``) could resolve to that stub, and which near calls (``E8``) reach the GEO body?
+Question. Stub 6 is ``START.EXE`` offset ``15884`` (``0x3E0C``): stub index 6 of the VROOMM group at
+header ``0x3DD7`` (partial; stub run at header+``0x17``), proc ``0x0E08`` into the WALLDEF wrapper
+``GAME.OVR:0x2F6FF`` (group fileofs ``0x2E8F7``). Across every parsed GAME.OVR overlay body, which
+instruction-decoded far calls (``9A seg:off``) could resolve to that stub, and which near calls (``E8``)
+reach the WALLDEF wrapper?
 
 Method (read-only, bounded, stdlib plus the read-only probe modules):
 
@@ -28,12 +33,12 @@ Method (read-only, bounded, stdlib plus the read-only probe modules):
   - Seg word not listed: the literal image ``hdr + seg*16 + off`` is tested for exact equality with ``F``.
   - Offset word listed: the offset itself receives ``DI``; no exact or residue test applies, so the row is
     ``undecided-*`` and never a candidate.
-* Near calls. ``E8`` decoded in a body with a target equal to the GEO body is reported with its owner; the target is
+* Near calls. ``E8`` decoded in a body with a target equal to the WALLDEF wrapper is reported with its owner; the target is
   body-relative and only reaches bytes of its own body.
 
 Controls (checked, not trusted). The eleven far calls of the 0x19BA handler must be decoded in group ``0x0D46``,
-and each residue must agree with ``por_ecl_21_fixup_residue_probe.residue_for``. The GEO stub bytes, group, index
-and proc, and the GEO body decode must hold; otherwise the verdict is ``precondition-failed``.
+and each residue must agree with ``por_ecl_21_fixup_residue_probe.residue_for``. The stub-6 bytes, group, index
+and proc, and the wrapper decode must hold; otherwise the verdict is ``precondition-failed``.
 
 Evidence labels. ``decoded`` = a decoder result. ``strong`` = reached from a stub proc by decoded control flow.
 ``weak`` = reached only from a prologue byte pattern. ``table-membership`` = exact test against the owner's table.
@@ -79,13 +84,13 @@ OVR_NAME = fr.OVR_NAME
 EXE_NAME = fr.EXE_NAME
 PINS = fr.PINNED
 
-GEO_STUB_F = 15884                          # START.EXE offset of the GEO stub (0x3E0C)
-GEO_STUB_BYTES = bytes.fromhex("cd 3f 08 0e 00")
-GEO_HEADER = 0x3DD7
-GEO_INDEX = 6
-GEO_GROUP_FILEOFS = 0x2E8F7
-GEO_PROC = 0x0E08
-GEO_BODY = 0x2F6FF                          # = GEO_GROUP_FILEOFS + GEO_PROC
+STUB6_F = 15884                          # START.EXE offset of stub 6 (0x3E0C)
+STUB6_BYTES = bytes.fromhex("cd 3f 08 0e 00")
+STUB6_HEADER = 0x3DD7
+STUB6_INDEX = 6
+STUB6_GROUP_FILEOFS = 0x2E8F7
+STUB6_PROC = 0x0E08
+WALLDEF_BODY = 0x2F6FF                          # WALLDEF wrapper = STUB6_GROUP_FILEOFS + STUB6_PROC
 
 HANDLER = 0x19BA
 HANDLER_GROUP_FILEOFS = 0x0D46
@@ -161,7 +166,7 @@ def table_info(ovr: bytes, g: dict) -> dict:
 
 
 def site_eval(at: int, seg: int, off: int, owner_fo: int, listed: set, hdr: int,
-              target: int = GEO_STUB_F) -> dict:
+              target: int = STUB6_F) -> dict:
     """Classify one far call against one owner's table (see the module docstring for the rule)."""
     seg_body = at + 3 - owner_fo
     off_body = at + 1 - owner_fo
@@ -316,29 +321,29 @@ def census_group(ovr: bytes, g: dict) -> dict:
 # Whole-install analysis
 # ---------------------------------------------------------------------------------------------
 
-def geo_precondition(start: bytes, groups: list[dict]) -> dict:
-    """The GEO stub, its group, index and proc, and the GEO body's owner. Structural only."""
-    out = {"geo_stub_bytes": start[GEO_STUB_F:GEO_STUB_F + 5] == GEO_STUB_BYTES}
-    slot = fr.stub_slot(groups, GEO_STUB_F)
+def stub6_precondition(start: bytes, groups: list[dict]) -> dict:
+    """Stub 6, its group, index and proc, and the WALLDEF wrapper's owner. Structural only."""
+    out = {"stub6_bytes": start[STUB6_F:STUB6_F + 5] == STUB6_BYTES}
+    slot = fr.stub_slot(groups, STUB6_F)
     if slot is None:
-        out.update({"geo_stub_slot": False, "geo_group_is_header": False, "geo_index": False,
-                    "geo_proc": False, "geo_body_owner_is_group": False})
+        out.update({"stub6_slot": False, "stub6_group_is_header": False, "stub6_index": False,
+                    "stub6_proc": False, "walldef_owner_is_group": False})
         return out
     g, k = slot
-    out["geo_stub_slot"] = True
-    out["geo_group_is_header"] = g["header_offset"] == GEO_HEADER
-    out["geo_index"] = k == GEO_INDEX and bool(g["stub_valid"][k])
-    out["geo_proc"] = g["procs"][k] == GEO_PROC and g["fileofs"] + GEO_PROC == GEO_BODY
-    owner = fr.group_containing_code(groups, GEO_BODY)
-    out["geo_body_owner_is_group"] = owner is not None and owner["fileofs"] == GEO_GROUP_FILEOFS
-    out["geo_status"] = g["status"]
+    out["stub6_slot"] = True
+    out["stub6_group_is_header"] = g["header_offset"] == STUB6_HEADER
+    out["stub6_index"] = k == STUB6_INDEX and bool(g["stub_valid"][k])
+    out["stub6_proc"] = g["procs"][k] == STUB6_PROC and g["fileofs"] + STUB6_PROC == WALLDEF_BODY
+    owner = fr.group_containing_code(groups, WALLDEF_BODY)
+    out["walldef_owner_is_group"] = owner is not None and owner["fileofs"] == STUB6_GROUP_FILEOFS
+    out["stub6_status"] = g["status"]
     return out
 
 
 def analyse(start: bytes, ovr: bytes) -> dict:
     hdr = fr.mz_image_base(start)
     groups = groups_of(start, ovr)
-    pre = geo_precondition(start, groups)
+    pre = stub6_precondition(start, groups)
 
     group_rows = []
     group_full = []          # per group: decoded instruction starts (not serialised)
@@ -358,10 +363,10 @@ def analyse(start: bytes, ovr: bytes) -> dict:
         row["far_calls"] = len(res["far_decoded"])
         row["far_calls_strong"] = sum(1 for f in res["far_decoded"] if f["strong"])
         row["near_calls"] = len(res["near_decoded"])
-        row["near_calls_to_geo_body"] = sum(1 for n in res["near_decoded"] if n["target"] == GEO_BODY)
-        row["contains_geo_body"] = g["fileofs"] <= GEO_BODY < g["fileofs"] + g["codesz"]
+        row["near_calls_to_walldef_body"] = sum(1 for n in res["near_decoded"] if n["target"] == WALLDEF_BODY)
+        row["contains_walldef_body"] = g["fileofs"] <= WALLDEF_BODY < g["fileofs"] + g["codesz"]
         group_rows.append(row)
-        group_full.append({"_starts": res["_starts"], "contains_geo_body": row["contains_geo_body"]})
+        group_full.append({"_starts": res["_starts"], "contains_walldef_body": row["contains_walldef_body"]})
 
         for f in res["far_decoded"]:
             ev = site_eval(f["at"], f["seg"], f["off"], g["fileofs"], listed, hdr)
@@ -373,7 +378,7 @@ def analyse(start: bytes, ovr: bytes) -> dict:
             site["owners"].append(ev)
 
         for n in res["near_decoded"]:
-            if n["target"] == GEO_BODY:
+            if n["target"] == WALLDEF_BODY:
                 near_map[(n["at"], g["fileofs"])] = {
                     "at": _hex(n["at"]), "owner_fileofs": _hex(g["fileofs"]),
                     "body_target": _hex(n["body_target"]), "target_file": _hex(n["target"]),
@@ -403,7 +408,7 @@ def analyse(start: bytes, ovr: bytes) -> dict:
         s = site_map[at]
         s["owners"].sort(key=lambda o: o["owner_fileofs"])
         far_sites.append(s)
-    near_geo = [near_map[k] for k in sorted(near_map)]
+    near_walldef = [near_map[k] for k in sorted(near_map)]
 
     status_counts: dict = {}
     for s in far_sites:
@@ -413,7 +418,7 @@ def analyse(start: bytes, ovr: bytes) -> dict:
                    "strong": s["strong"], "owners": [o for o in s["owners"] if o["candidate"]]}
                   for s in far_sites if any(o["candidate"] for o in s["owners"])]
     distinct_targets = {(s["seg"], s["off"]) for s in far_sites}
-    geo_body_decoded = any(GEO_BODY in g["_starts"] for g in group_full if g["contains_geo_body"])
+    walldef_body_decoded = any(WALLDEF_BODY in g["_starts"] for g in group_full if g["contains_walldef_body"])
 
     totals = {
         "parsed_groups": len(groups),
@@ -428,7 +433,7 @@ def analyse(start: bytes, ovr: bytes) -> dict:
         "far_call_sites_strong": sum(1 for s in far_sites if s["strong"]),
         "far_call_sites_weak_only": sum(1 for s in far_sites if not s["strong"]),
         "distinct_seg_off_targets": len(distinct_targets),
-        "near_calls_to_geo_body": len(near_geo),
+        "near_calls_to_walldef_body": len(near_walldef),
         "status_counts": dict(sorted(status_counts.items())),
     }
 
@@ -437,8 +442,8 @@ def analyse(start: bytes, ovr: bytes) -> dict:
         failed.append("handler_far_calls_decoded_in_group_0x0D46")
     if len(residue_agree) != EXPECT_HANDLER_FAR or not all(residue_agree):
         failed.append("handler_residue_agrees_with_0x21_probe")
-    if not geo_body_decoded:
-        failed.append("geo_body_decoded")
+    if not walldef_body_decoded:
+        failed.append("walldef_body_decoded")
     if failed:
         status = STATUS_PRECONDITION
         reason = "structural precondition(s) failed: %s; no verdict" % ", ".join(failed)
@@ -449,22 +454,22 @@ def analyse(start: bytes, ovr: bytes) -> dict:
                   % len(candidates))
     else:
         status = STATUS_NONE
-        reason = ("no decoded far call across %d parsed groups is a candidate for the GEO stub under a "
+        reason = ("no decoded far call across %d parsed groups is a candidate for stub 6 under a "
                   "paragraph-aligned resident image (scope: decoded coverage, see per-group coverage)"
                   % len(groups))
     return {
         "hdr": _hex(hdr),
-        "geo_stub_file": _hex(GEO_STUB_F),
-        "geo_target_residue_mod16": (GEO_STUB_F - hdr) % PARA,
+        "stub6_file": _hex(STUB6_F),
+        "stub6_target_residue_mod16": (STUB6_F - hdr) % PARA,
         "precondition": pre,
-        "geo_body_decoded": geo_body_decoded,
+        "walldef_body_decoded": walldef_body_decoded,
         "groups": group_rows,
         "far_call_sites": far_sites,
-        "near_calls_to_geo_body": near_geo,
+        "near_calls_to_walldef_body": near_walldef,
         "handler_control": handler_rows,
         "candidates": candidates,
         "totals": totals,
-        "verdict": {"geo_status": status, "reason": reason, "failed_preconditions": failed,
+        "verdict": {"stub6_status": status, "reason": reason, "failed_preconditions": failed,
                     "candidate_count": len(candidates)},
         "notes": fr.scan_all(start, ovr)["notes"],
     }
@@ -483,12 +488,12 @@ def self_checks(doc: dict, hashes_before: dict, hashes_after: dict) -> list:
          and all(rw["decoded"] and rw["in_handler_group"] for rw in doc["handler_control"])),
         ("handler_residue_agrees_with_0x21_probe",
          all(rw["census_skew_mod16"] == rw["residue_probe_skew_mod16"] for rw in doc["handler_control"])),
-        ("geo_body_decoded", doc["geo_body_decoded"] is True),
+        ("walldef_body_decoded", doc["walldef_body_decoded"] is True),
         ("every_far_site_has_an_owner", all(s["owners"] for s in doc["far_call_sites"])),
         ("owner_rows_unique", len(owner_keys) == len(set(owner_keys))),
         ("owner_rows_match_totals", len(owner_keys) == doc["totals"]["far_call_owner_rows"]),
         ("verdict_never_established",
-         doc["verdict"]["geo_status"] in (STATUS_CANDIDATE, STATUS_NONE, STATUS_PRECONDITION)),
+         doc["verdict"]["stub6_status"] in (STATUS_CANDIDATE, STATUS_NONE, STATUS_PRECONDITION)),
         ("inputs_unchanged", hashes_before == hashes_after),
     ]
     return [{"name": n, "ok": bool(ok)} for n, ok in checks]
@@ -520,9 +525,9 @@ def probe(install: Path, out: Path) -> tuple:
         "established": False,
         "mappings": [],
         "inputs": {k: {"size": len(v), "sha256": _sha(v)} for k, v in inputs.items()},
-        "target": {"geo_stub_file": _hex(GEO_STUB_F), "geo_header": _hex(GEO_HEADER), "geo_index": GEO_INDEX,
-                   "geo_proc": _hex(GEO_PROC), "geo_body": _hex(GEO_BODY),
-                   "geo_group_fileofs": _hex(GEO_GROUP_FILEOFS)},
+        "target": {"stub6_file": _hex(STUB6_F), "stub6_header": _hex(STUB6_HEADER), "stub6_index": STUB6_INDEX,
+                   "stub6_proc": _hex(STUB6_PROC), "walldef_body": _hex(WALLDEF_BODY),
+                   "stub6_group_fileofs": _hex(STUB6_GROUP_FILEOFS)},
         **doc,
     }
     out_doc["self_checks"] = self_checks(out_doc, before, after)
@@ -533,20 +538,20 @@ def render_md(doc: dict) -> str:
     v = doc["verdict"]
     t = doc["totals"]
     lines = [
-        "# Pool of Radiance: far-call census toward the GEO stub (static, diagnostic)",
+        "# Pool of Radiance: far-call census toward START stub 6 (WALLDEF wrapper; static, diagnostic)",
         "",
         "**Status: STATIC-PROBE-ONLY. `playable: false`, `established: false`, `mappings: []`.**",
         "",
         "## Verdict",
         "",
-        "- `geo_status`: **%s**" % v["geo_status"],
+        "- `stub6_status`: **%s**" % v["stub6_status"],
         "- Reason: %s" % v["reason"],
         "- Candidate sites: %d" % v["candidate_count"],
-        "- GEO stub: START.EXE %s, header %s index %d, proc %s into body %s"
-        % (doc["target"]["geo_stub_file"], doc["target"]["geo_header"], doc["target"]["geo_index"],
-           doc["target"]["geo_proc"], doc["target"]["geo_body"]),
+        "- Stub 6: START.EXE %s, header %s index %d, proc %s into the WALLDEF wrapper %s (not the GEO fill)"
+        % (doc["target"]["stub6_file"], doc["target"]["stub6_header"], doc["target"]["stub6_index"],
+           doc["target"]["stub6_proc"], doc["target"]["walldef_body"]),
         "- Residue a listed seg word needs: `off ≡ %d (mod 16)` (hdr %s)"
-        % (doc["geo_target_residue_mod16"], doc["hdr"]),
+        % (doc["stub6_target_residue_mod16"], doc["hdr"]),
         "",
         "## Totals",
         "",
@@ -556,20 +561,20 @@ def render_md(doc: dict) -> str:
     for k in ("parsed_groups", "well_formed_groups", "partial_groups", "coverage_strong_clean",
               "coverage_strong_incomplete", "coverage_no_strong_seed", "instructions", "far_call_sites",
               "far_call_owner_rows", "far_call_sites_strong", "far_call_sites_weak_only",
-              "distinct_seg_off_targets", "near_calls_to_geo_body"):
+              "distinct_seg_off_targets", "near_calls_to_walldef_body"):
         lines.append("| %s | %s |" % (k, t[k]))
     lines += ["", "Status counts (per site, per owner): `%s`" % json.dumps(t["status_counts"], sort_keys=True), ""]
     lines += [
         "## Parsed groups",
         "",
-        "| fileofs | codesz | fixupsz | status | coverage | insns | far (strong) | near | E8 to GEO | table ok | strong errs |",
+        "| fileofs | codesz | fixupsz | status | coverage | insns | far (strong) | near | E8 to WALLDEF wrapper | table ok | strong errs |",
         "| --- | ---: | ---: | --- | --- | ---: | --- | ---: | ---: | --- | ---: |",
     ]
     for g in doc["groups"]:
         lines.append("| %s | %s | %d | %s | %s | %d | %d (%d) | %d | %d | %s | %d |" % (
             _hex(g["fileofs"]), _hex(g["codesz"]), g["fixupsz"], g["status"], g["coverage"],
             g["instructions"], g["far_calls"], g["far_calls_strong"], g["near_calls"],
-            g["near_calls_to_geo_body"], "yes" if g["table_ok"] else "NO", g["decode_errors_strong"]))
+            g["near_calls_to_walldef_body"], "yes" if g["table_ok"] else "NO", g["decode_errors_strong"]))
     lines += ["", "## Candidate far-call sites", ""]
     if not doc["candidates"]:
         lines.append("None.")
@@ -581,11 +586,11 @@ def render_md(doc: dict) -> str:
                 lines.append("| %s | %s:%s | %s | %s | %s | %s | %s | %s |" % (
                     cand["at"], cand["seg"], cand["off"], "yes" if cand["strong"] else "no", o["owner_fileofs"],
                     o["status"], o["seg_word_listed"], o["off_word_listed"], o.get("di_constraint_mod64k", "-")))
-    lines += ["", "## Near E8 calls to the GEO body", ""]
-    if not doc["near_calls_to_geo_body"]:
+    lines += ["", "## Near E8 calls to the WALLDEF wrapper", ""]
+    if not doc["near_calls_to_walldef_body"]:
         lines.append("None decoded.")
     else:
-        for n in doc["near_calls_to_geo_body"]:
+        for n in doc["near_calls_to_walldef_body"]:
             lines.append("- at %s in group %s (body target %s), strong: %s"
                          % (n["at"], n["owner_fileofs"], n["body_target"], n["strong"]))
     lines += ["", "## Handler control (the eleven 0x19BA far calls)", "",
@@ -617,7 +622,7 @@ def write_outputs(doc: dict, out: Path) -> None:
 
 
 def main(argv: Optional[list] = None) -> int:
-    ap = argparse.ArgumentParser(description="PoR far-call census toward the GEO stub (static, read-only).")
+    ap = argparse.ArgumentParser(description="PoR far-call census toward START stub 6 (static, read-only).")
     ap.add_argument("--install", required=True, type=Path, help="folder holding the pinned GAME.OVR and START.EXE")
     ap.add_argument("-o", "--out", required=True, type=Path, help="output folder, under data/work/")
     args = ap.parse_args(argv)
@@ -627,8 +632,8 @@ def main(argv: Optional[list] = None) -> int:
         print("refused: %s" % e, file=sys.stderr)
         return 2
     write_outputs(doc, args.out)
-    print("geo_status=%s candidates=%d self_checks=%s" % (
-        doc["verdict"]["geo_status"], doc["verdict"]["candidate_count"], "pass" if code == 0 else "FAIL"))
+    print("stub6_status=%s candidates=%d self_checks=%s" % (
+        doc["verdict"]["stub6_status"], doc["verdict"]["candidate_count"], "pass" if code == 0 else "FAIL"))
     return code
 
 

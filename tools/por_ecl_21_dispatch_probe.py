@@ -4,9 +4,10 @@
 STATUS: static-probe-only. ``playable: false``. No events, no mappings, no module output.
 
 Question. The live stream loop at ``GAME.OVR:0x3EB7`` hands each ECL key to the dispatcher at
-``0x3C73``. Does the ``0x21`` arm reach the GEO loader body at ``GAME.OVR:0x2F6FF`` (directly, or
-through a VROOMM stub), or does it supply equivalent archive/block arguments? Only PoR bytes are
-used. The opcode name, the CoK LOAD_FILES semantics and every GoldBox opcode map are NOT read and
+``0x3C73``. Does the ``0x21`` arm reach stub 6 (START file ``0x3E0C``), whose procedure is the WALLDEF
+wrapper at ``GAME.OVR:0x2F6FF`` (directly, or through a VROOMM stub), or does it supply archive/block
+arguments to that wrapper? The wrapper builds ``WALLDEF<d>.dax``, not a GEO file; the GEO fill at
+``GAME.OVR:0x2F9BE`` is a different procedure and is not tested here. Only PoR bytes are used. The opcode name, the CoK LOAD_FILES semantics and every GoldBox opcode map are NOT read and
 supply no meaning here.
 
 Method (read-only, bounded; no emulator, no runtime):
@@ -23,21 +24,21 @@ Method (read-only, bounded; no emulator, no runtime):
   instructions by address are listed for inspection only. They are NOT a push-chain: the decoder's
   text drops some ModRM operands, and the list crosses jumps. No argument conclusion is drawn from them.
 * Far calls. ``por_farcall_resolve.resolve`` classifies each ``9A seg:off`` against the VROOMM
-  stub groups. This probe also computes its own zero-skew stub image address for the GEO entry
+  stub groups. This probe also computes its own zero-skew stub image address for stub 6
   (``stub_start + 5*index``) and tests every far call against it.
 
 Evidence labels. ``decoded`` = an instruction from a walk. ``byte-pattern`` = a raw-byte match only.
 ``model-dependent`` = the far call's seg word is in the fixup table, so its load-time value is not in
 the file; under the zero-skew model it is tested, and the result is not a fact about the runtime.
 
-Verdict scope. ``geo_call_status`` is one of ``not-established`` (the default: the zero-skew model
-does not reach GEO, and the remaining far calls are model-dependent), ``candidate-edge`` (a far call
-lands on the GEO stub under zero-skew, not yet a runtime fact), or ``arm-absent``. This probe never
+Verdict scope. ``stub6_call_status`` is one of ``not-established`` (the default: the zero-skew model
+does not reach stub 6, and the remaining far calls are model-dependent), ``candidate-edge`` (a far call
+lands on stub 6 under zero-skew, not yet a runtime fact), or ``arm-absent``. This probe never
 returns ``established``.
 
 Falsifiers (checked on synthetic and retail-mutated copies in the test suite): a moved compare value
-(arm absent); a dispatch ``E8`` target changed (direct edge check fails); a far call retargeted to the
-GEO stub (candidate-edge must flip); a GEO stub proc changed (candidate must disappear).
+(arm absent); a dispatch ``E8`` target changed (direct edge check fails); a far call retargeted to
+stub 6 (candidate-edge must flip); a stub 6 proc changed (candidate must disappear).
 
 Usage::
 
@@ -84,8 +85,8 @@ OPCODE = 0x21                 # the arm under study (cmp al,0x21 at GAME.OVR:0x3
 CONTROL_OPCODE = 0x37         # shares the handler; reported as a control only
 LOOP_ENTRY = 0x3EB7           # the stream loop
 DISPATCH_ENTRY = 0x3C73       # the dispatcher
-GEO_BODY = 0x2F6FF            # the GEO loader body (the file offset the question names)
-GEO_BODY_PRO = b"\x55\x89\xe5"
+WALLDEF_BODY = 0x2F6FF            # proc of stub 6: the WALLDEF wrapper (the file offset the question names)
+WALLDEF_BODY_PRO = b"\x55\x89\xe5"
 EXPECT_HANDLER = 0x19BA       # both 0x21 and 0x37 reach this near target (checked, not trusted)
 EXPECT_FAR_CALLS = 11
 EXPECT_LOOP_CALLERS = 9       # the raw E8 scan of 0x3EB7 (byte-pattern; checked, not trusted)
@@ -223,14 +224,14 @@ def handler_report(ovr: bytes, entry: int) -> dict:
 
 
 # ---------------------------------------------------------------------------------------------
-# Far-call classification (VROOMM stubs under the zero-skew model) and the GEO entry test
+# Far-call classification (VROOMM stubs under the zero-skew model) and the stub-6 entry test
 # ---------------------------------------------------------------------------------------------
 
 def _all_groups(scan: dict) -> list:
     return list(scan["groups"]) + list(scan["partial_groups"])
 
 
-def geo_stub_candidates(start: bytes, ovr: bytes, target: int) -> list:
+def stub6_candidates(start: bytes, ovr: bytes, target: int) -> list:
     """Every stub (well-formed or partial, valid or not) whose proc is ``target``, per group."""
     scan = fr.scan_all(start, ovr)
     rows = []
@@ -249,17 +250,17 @@ def geo_stub_candidates(start: bytes, ovr: bytes, target: int) -> list:
                     "stub_valid": bool(g["stub_valid"][k]),
                     "proc_off": proc,
                     "stub_image_f": g["stub_start"] + STUB_STEP * k,
-                    "target_prologue": ovr[target:target + 3] == GEO_BODY_PRO,
+                    "target_prologue": ovr[target:target + 3] == WALLDEF_BODY_PRO,
                 })
     return rows
 
 
 def far_classification(start: bytes, ovr: bytes, far: list) -> dict:
-    """Classify each far call (zero-skew) and test it against the GEO stub candidates."""
+    """Classify each far call (zero-skew) and test it against the stub-6 candidates."""
     hdr = fr.mz_image_base(start)
     res = fr.resolve(start, ovr, [{"at": c["at"], "seg": c["seg"], "off": c["off"]} for c in far])
     rows_by_at = {r["at"]: r for r in res["far_calls"]}
-    cands = geo_stub_candidates(start, ovr, GEO_BODY)
+    cands = stub6_candidates(start, ovr, WALLDEF_BODY)
     cand_images = {(c["stub_image_f"]): c for c in cands if c["stub_valid"]}
     rows = []
     for c in far:
@@ -270,7 +271,7 @@ def far_classification(start: bytes, ovr: bytes, far: list) -> dict:
             model = "zero-skew-stub"
         else:
             model = "model-dependent"
-        geo_hit = cand_images.get(image_f)
+        stub6_hit = cand_images.get(image_f)
         rows.append({
             "at": _hex(c["at"]),
             "seg": c["seg"],
@@ -288,31 +289,31 @@ def far_classification(start: bytes, ovr: bytes, far: list) -> dict:
                 "proc_off": stub["proc_off"],
                 "gameovr_target": _hex(stub["gameovr_target"]),
             },
-            "geo_edge_zero_skew": None if geo_hit is None else {
-                "group_header": geo_hit["group_header"],
-                "stub_index": geo_hit["stub_index"],
+            "stub6_edge_zero_skew": None if stub6_hit is None else {
+                "group_header": stub6_hit["group_header"],
+                "stub_index": stub6_hit["stub_index"],
             },
         })
-    return {"rows": rows, "geo_stub_candidates": cands}
+    return {"rows": rows, "stub6_candidates": cands}
 
 
-def geo_status(far_rows: list, cands: list) -> dict:
-    hits = [r for r in far_rows if r["geo_edge_zero_skew"] is not None]
+def stub6_status(far_rows: list, cands: list) -> dict:
+    hits = [r for r in far_rows if r["stub6_edge_zero_skew"] is not None]
     model_dep = [r for r in far_rows if r["model"] == "model-dependent"]
     if hits:
         status = "candidate-edge"
     else:
         status = "not-established"
     return {
-        "geo_call_status": status,
-        "geo_body": _hex(GEO_BODY),
-        "geo_stub_candidates": cands,
-        "zero_skew_edges_to_geo": [{"at": r["at"], **r["geo_edge_zero_skew"]} for r in hits],
+        "stub6_call_status": status,
+        "walldef_body": _hex(WALLDEF_BODY),
+        "stub6_candidates": cands,
+        "zero_skew_edges_to_stub6": [{"at": r["at"], **r["stub6_edge_zero_skew"]} for r in hits],
         "model_dependent_far_calls": [r["at"] for r in model_dep],
         "reason": (
-            "a far call lands on the GEO stub under the zero-skew image model; not a runtime fact"
+            "a far call lands on stub 6 (the WALLDEF wrapper entry) under the zero-skew image model; not a runtime fact"
             if hits else
-            "no far call lands on a GEO stub under the zero-skew image model; %d far call(s) are "
+            "no far call lands on stub 6 under the zero-skew image model; %d far call(s) are "
             "model-dependent (seg word in fixup table, load-time segment not in the file)" % len(model_dep)
         ),
     }
@@ -328,13 +329,13 @@ def analyse(ovr: bytes, start: bytes, opcode: int = OPCODE) -> dict:
     loop = loop_report(ovr)
     if not arm.get("present"):
         return {"arm": arm, "control": control, "loop": loop, "handler": None,
-                "far": None, "geo": {"geo_call_status": "arm-absent"}}
+                "far": None, "stub6": {"stub6_call_status": "arm-absent"}}
     hr = handler_report(ovr, int(arm["handler"], 16))
     far = [{"at": int(c["at"], 16), "seg": c["seg"], "off": c["off"]} for c in hr["far_calls"]]
     far_doc = far_classification(start, ovr, far)
-    geo = geo_status(far_doc["rows"], far_doc["geo_stub_candidates"])
+    s6 = stub6_status(far_doc["rows"], far_doc["stub6_candidates"])
     return {"arm": arm, "control": control, "loop": loop, "handler": hr,
-            "far": far_doc, "geo": geo}
+            "far": far_doc, "stub6": s6}
 
 
 def self_checks(doc: dict, hashes_before: dict, hashes_after: dict) -> list:
@@ -360,9 +361,9 @@ def self_checks(doc: dict, hashes_before: dict, hashes_after: dict) -> list:
         ("handler_far_call_count", len(hr.get("far_calls", [])) == EXPECT_FAR_CALLS),
         ("handler_far_calls_at_stub_group_0x74D3",
          sum(1 for r in far_rows if r["stub"] and r["stub"]["group_fileofs"] == "0x74D3") == 2),
-        ("geo_body_has_valid_stub_with_prologue",
+        ("walldef_body_has_valid_stub_with_prologue",
          any(c["stub_valid"] and c["target_prologue"]
-             for c in ((doc.get("far") or {}).get("geo_stub_candidates") or []))),
+             for c in ((doc.get("far") or {}).get("stub6_candidates") or []))),
     ]
     return [{"name": n, "ok": bool(ok)} for n, ok in checks]
 
@@ -376,9 +377,9 @@ def probe(install: Path, out: Path) -> tuple:
     after = _input_hashes(install)
     doc = {
         "schema": SCHEMA, "schema_version": SCHEMA_VERSION, "status": STATUS, "tool": TOOL,
-        "playable": False, "question": "does the 0x21 arm reach the GEO loader body 0x2F6FF?",
+        "playable": False, "question": "does the 0x21 arm reach stub 6 (proc 0x2F6FF, the WALLDEF wrapper)?",
         "inputs": {n: {"size": len(inputs[n]), "sha256": _sha(inputs[n])} for n in PINS},
-        "opcode": _hex(OPCODE), "control_opcode": _hex(CONTROL_OPCODE), "geo_body": _hex(GEO_BODY),
+        "opcode": _hex(OPCODE), "control_opcode": _hex(CONTROL_OPCODE), "walldef_body": _hex(WALLDEF_BODY),
         **doc,
     }
     doc["self_checks"] = self_checks(doc, before, after)
@@ -402,8 +403,8 @@ def render_md(doc: dict) -> str:
     lines = [
         "# Pool of Radiance: ECL opcode 0x21 dispatch probe (static)",
         "",
-        "**Status: STATIC-PROBE-ONLY. `playable: false`.** Question: does the `0x21` arm reach the GEO "
-        "loader body `0x2F6FF`? Answer: **%s**." % doc["geo"]["geo_call_status"],
+        "**Status: STATIC-PROBE-ONLY. `playable: false`.** Question: does the `0x21` arm reach stub 6 "
+        "(proc `0x2F6FF`, the WALLDEF wrapper)? Answer: **%s**." % doc["stub6"]["stub6_call_status"],
         "",
         "## Dispatch arm",
         "",
@@ -441,8 +442,8 @@ def render_md(doc: dict) -> str:
             lines.append("| %s | %02X:%02X | %d | %s | %s | %s |" % (
                 r["at"], r["seg"], r["off"], r["zero_skew_image_f"], r["classification"], r["model"], sdesc))
         lines.append("")
-    lines += ["## GEO entry (`0x2F6FF`)", "", doc["geo"]["reason"], ""]
-    for c in doc["geo"].get("geo_stub_candidates", []):
+    lines += ["## Stub 6 entry (proc `0x2F6FF`, WALLDEF wrapper)", "", doc["stub6"]["reason"], ""]
+    for c in doc["stub6"].get("stub6_candidates", []):
         lines.append("- stub candidate: group `%s` (%s, %s), index %d, valid %s, zero-skew image %d" % (
             c["group_header"], c["group_fileofs"], c["group_status"], c["stub_index"], c["stub_valid"],
             c["stub_image_f"]))
@@ -476,8 +477,8 @@ def main(argv: Optional[list] = None) -> int:
         print("refused: %s" % e, file=sys.stderr)
         return 2
     write_outputs(doc, out)
-    print("geo_call_status=%s self_checks=%s" % (
-        doc["geo"]["geo_call_status"], "pass" if code == 0 else "FAIL"))
+    print("stub6_call_status=%s self_checks=%s" % (
+        doc["stub6"]["stub6_call_status"], "pass" if code == 0 else "FAIL"))
     return code
 
 

@@ -2,7 +2,8 @@
 """Static caller-frame check of the nine argument-push-shape sites (observe-only, shape comparison).
 
 Follow-up to tools/por_geo_stub_farcall_argpush_shape.py. That tool found nine strong residue-compatible
-far calls whose ten pushed bytes match the GEO loader's shape. All nine call segment 0085 offset 005C.
+far calls whose ten pushed bytes match the loader's shape. All nine call segment 0085 offset 005C. Those sites are
+stub-6 census candidates, so the shape match is not a GEO result.
 The loader's far target is 0802:0716. So the nine are NOT established as loader calls. This tool asks one
 narrower question: do their caller frames account for the stack the way the walked loader frames do?
 
@@ -68,7 +69,7 @@ SHAPE_BYTES = 10                                 # id word + two far pointers, a
 TARGET = (0x0085, 0x005C)                        # callee of all nine sites; segment base NOT established
 CALLEE_C = (0x03C5, 0x0039)                      # unknown far callee in the windows of 0x1820A..0x1861E and 0x18422
 CALLEE_G = (0x00BA, 0x16EC)                      # unknown far callee in the windows of 0x1820A, 0x182A0, 0x1861E
-LOADER = (0x0802, 0x0716)                        # GEO loader identity: never applied to these sites
+LOADER = (0x0802, 0x0716)                        # loader identity (START 0x876D): never applied to these sites
 
 # Parameter name -> callee. The same seg:off shares one parameter across every site that calls it.
 PARAMS = {TARGET: "K_a", CALLEE_C: "K_c", CALLEE_G: "K_g"}
@@ -108,7 +109,7 @@ EXPECT_CENSUS = {"candidates": 181, "strong": 166, "analysed": 166, "loader_shap
 
 NOT_ESTABLISHED = [
     "that any of the nine sites runs, or that any call at them is executed at any instant",
-    "that 0085:005C is the GEO loader, the GEO stub, or any body in the census: its segment base is not established",
+    "that 0085:005C is the loader, stub 6, or any body in the census: its segment base is not established",
     "the pops of 0085:005C, 03C5:0039 and 00BA:16EC: swept as hypotheses only where a site's window is small enough; "
     "every other unknown callee (0709:0D68, 0085:0057, 0096:003E, 00BA:1693, and others) is unswept and unread",
     "that any shape id word, pushed pointer, or leftover word holds a GEO, block, or area value",
@@ -520,7 +521,7 @@ def probe(install: Path, out: Path) -> tuple[dict, int]:
         "schema": SCHEMA, "schema_version": SCHEMA_VERSION, "status": STATUS, "tool": TOOL,
         "playable": False, "established": False, "mappings": [],
         "question": ("Do the caller frames of the nine argument-push-shape sites (all calling 0085:005C) "
-                     "account for their stack the way the walked GEO loader frames do?"),
+                     "account for their stack the way the walked loader frames do?"),
         "pins": pins,
         "inputs_hashes_before": before, "inputs_hashes_after": after,
         "census_expected": EXPECT_CENSUS, "census_counts": counts,

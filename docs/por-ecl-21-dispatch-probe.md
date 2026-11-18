@@ -2,19 +2,19 @@
 
 **Status: STATIC-PROBE-ONLY. `playable: false`.** `tools/por_ecl_21_dispatch_probe.py` reads the pinned
 retail `GAME.OVR` and `START.EXE` read-only and traces the `0x21` arm of the dispatcher to its handler
-and that handler's far calls. Question: does the `0x21` path reach the GEO loader body at `GAME.OVR:0x2F6FF`,
+and that handler's far calls. Question: does the `0x21` path reach START stub 6 (the WALLDEF wrapper at `GAME.OVR:0x2F6FF`),
 or supply equivalent archive/block arguments?
 
-**Answer: conditionally mapped in RAM, execution not established.** The direct edge into the GEO body is absent.
-Under the zero-skew model no far call lands on the GEO stub, and the paragraph-residue probe finds that no
-site reaches it under a paragraph-aligned model for any fixup delta. A later RAM-dump check finds that four `03D5:003E` calls instead target the exact five-byte
-START stub 6 in both captures; that stub's procedure word points to the GEO-loader candidate at `0x2F6FF`.
+**Answer: conditionally mapped in RAM, execution not established.** The direct edge into the WALLDEF wrapper is absent.
+Under the zero-skew model no far call lands on stub 6, and the paragraph-residue probe finds that no
+site reaches stub 6 under a paragraph-aligned model for any fixup delta. A later RAM-dump check finds that four `03D5:003E` calls instead target the exact five-byte
+START stub 6 in both captures; that stub's procedure word points to the WALLDEF wrapper at `0x2F6FF`.
 This is a memory-byte target chain, not evidence any call ran. Nine of the eleven calls were model-dependent
 in the original file-only zero-skew analysis; follow-up dump checks now match four to stub 6, and the separate
 `0x1A27` check has only a partial match to stub 7. The other target identities, call arguments, and execution
 remain open. This probe does not analyze the call-frame arguments; a later
 stub-7 cross-check finds the pushed byte is the first local populated from a three-call `002B:0025`
-loop, and that its one-word shape fits the candidate fill, conditional on target identity. The helper's
+loop, and that its one-word shape fits the GEO fill at `0x2F9BE`, conditional on target identity. The helper's
 return semantics remain open.
 
 The opcode name, the CoK LOAD_FILES semantics and every GoldBox opcode map were not read or used. The
@@ -102,10 +102,10 @@ code bytes (`bytes_at_image_f`), which the probe records and does not interpret.
 not in the file, so they are reported as **model-dependent**, not as "not GEO".
 
 The two stub calls are the only far calls whose literal target is a VROOMM stub under the zero-skew model. The
-probe matches them to group `0x74D3` (well-formed, 25 of 25 prologues). Neither is the GEO stub. The four
+probe matches them to group `0x74D3` (well-formed, 25 of 25 prologues). Neither is stub 6. The four
 `03D5:003E` sites are separate from those zero-skew hits and are checked against live target bytes below.
 
-### 5. The GEO body `0x2F6FF`
+### 5. Stub 6's procedure `0x2F6FF` (the WALLDEF wrapper)
 
 - The bytes at `GAME.OVR:0x2F6FF` are `55 89 E5 81 EC 18 01`, a Borland prologue.
 - It is the target of **stub index 6** of group header `0x3DD7` (file `0x2E8F7`). That group is **partial**:
@@ -116,21 +116,23 @@ probe matches them to group `0x74D3` (well-formed, 25 of 25 prologues). Neither 
 - **No far call of `0x19BA` has zero-skew image address `15884`.** The eleven far-call images are
   `1242, 1237, 16275, 48267, 16565, 16270, 16270, 16270, 16270, 13689, 5383`. None equals `15884`.
 
-So under the zero-skew model the `0x21` path has **no direct edge** to the GEO body. The result is deterministic
+So under the zero-skew model the `0x21` path has **no direct edge** to the WALLDEF wrapper. The result is deterministic
 (`test_retail_analysis_is_deterministic`).
 
 ### Later RAM cross-check of the four `03D5:003E` sites
+
+The four sites are on the `0x37` side of the shared handler, not the `0x21` arm (see [`por-ecl-stub6-key-arg-probe.md`](por-ecl-stub6-key-arg-probe.md)).
 
 The follow-up [stub-6 dump probe](por-ecl-21-stub6-dump-probe.md) maps the handler group uniquely at
 `0x45C40` in both pinned dumps. At `0x1A77`, `0x1A9E`, `0x1AAA`, and `0x1AD6`, the live call bytes
 are `9A 3E 00 3B 1C`, targeting `1C3B:003E` / linear `0x1C3EE`. The first five target bytes are
 `CD 3F 08 0E 00`, an exact match to START stub 6 at `0x3E0C`. Stub 6's proc word `0x0E08` maps
-through owner group `0x2E8F7` to file `0x2F6FF`, the GEO-loader candidate.
+through owner group `0x2E8F7` to file `0x2F6FF`, the WALLDEF wrapper (not a GEO routine).
 
 This supersedes the earlier statement that all nine non-zero-skew calls were wholly model-dependent:
 four have a memory-byte target match in these dumps. The target is a stub, not a direct call into
 the body. The group is partial, the snapshot instant is unknown, and no call or INT 3Fh dispatch
-is observed. Archive/block arguments and runtime GEO loading remain unestablished.
+is observed. Archive/block arguments and runtime execution of the wrapper remain unestablished.
 
 ### Later RAM cross-check of the `0x1A27` target (partial)
 
@@ -142,7 +144,7 @@ not a full stub identity.
 
 This is memory-byte evidence at unknown capture instants. It does not show that `0x1A27` executed, that
 the ECL `0x21` arm was reached, or that the call enters the GEO fill at `0x2F9BE`. The earlier
-`geo_call_status=not-established` remains the verdict. The stack-shape match to the fill remains conditional.
+The earlier call-status verdict (`not-established`) remains. The stack-shape match to the GEO fill at `0x2F9BE` remains conditional.
 
 ### 6. Arguments
 
@@ -158,11 +160,11 @@ these only as `nearest_decoded_before`, for inspection. No conclusion is drawn f
 | --- | --- | --- |
 | Does the `0x21` arm reach a handler? | **Yes**: `0x3DA3` `E8` to `0x19BA` | decoded, direct |
 | Does the handler make near or indirect calls? | **No** | decoded walk, complete |
-| Does a far call of `0x19BA` target the GEO loader candidate? | **Four calls conditionally target START stub 6 in both dumps**, whose proc word points to `0x2F6FF`. The zero-skew and paragraph-aligned models do not resolve them; execution, INT 3Fh dispatch, and successful loading are not shown. The separate `0x1A27` call has only a partial prefix match to stub 7. | exact five-byte target match, stub proc word and owner offsets; no execution trace |
-| Do the handler's bytes supply GEO archive/block arguments? | **Not established** | `[bp-3]` is the first AL result of a 1..3 call loop through `002B:0025`; the candidate fill's `[bp+6]` byte argument and `retf 2` are stack-compatible, but helper semantics, target identity, value and meaning remain open |
+| Does a far call of `0x19BA` target stub 6 (the WALLDEF wrapper)? | **Four calls conditionally target START stub 6 in both dumps**, whose proc word points to `0x2F6FF`. The zero-skew and paragraph-aligned models do not resolve them; execution, INT 3Fh dispatch, and successful loading are not shown. The separate `0x1A27` call has only a partial prefix match to stub 7. | exact five-byte target match, stub proc word and owner offsets; no execution trace |
+| Do the handler's bytes supply archive/block arguments for the wrapper? | **Not established** | `[bp-3]` is the first AL result of a 1..3 call loop through `002B:0025`; the GEO fill at `0x2F9BE` (not a stub-6 target) has a `[bp+6]` byte argument and `retf 2` that are stack-compatible, but helper semantics, target identity, value and meaning remain open |
 | Is the `0x21` path reachable from a PoR root? | **Not established** | nine `E8` callers of `0x3EB7`, byte-pattern only |
 
-`geo_call_status` is `not-established`. The probe never returns `established`.
+`stub6_call_status` is `not-established`. The probe never returns `established`.
 
 ## Falsifiers and controls
 
@@ -174,7 +176,7 @@ Mutations work on in-memory copies. The install is never written.
 | Moved compare | `0x3D9B` set to `0xEE` | arm absent; status `arm-absent` |
 | Moved dispatch call | rel16 at `0x3DA4` plus one | handler no longer `0x19BA`; self-check `arm_handler_is_expected` fails |
 | Positive control | far call at `0x19C3` set to `9A 0C 00 C0 03` (image `15884`) | status `candidate-edge`; edge at `0x19C3` to group `0x3DD7` stub 6 |
-| Negative control | GEO stub proc word in `START.EXE` plus one | no GEO candidate; status `not-established` |
+| Negative control | stub 6 proc word in `START.EXE` plus one | no stub-6 candidate; status `not-established` |
 | Combined | both changes | status `not-established` |
 
 The positive and negative controls together show the verdict follows the bytes in both directions. The stub
@@ -188,8 +190,8 @@ Refusals (no retail needed): missing input, unpinned input, output inside the in
 
 - Tests, retail pinned: **19 passed** (`OPENUA_POR_INSTALL="G:/Games/Pool of Radiance/POOLRAD"`).
 - Tests, no retail env: **6 passed, 13 skipped**.
-- CLI, retail: `geo_call_status=not-established self_checks=pass`, exit `0`.
-  Output JSON SHA-256 `e07c6adba2e371c15f4a29098f197fc3a474438a6a2b1207d26e0fabf51ed62e` (15,552 bytes, under `data/work/por-ecl-21-dispatch-probe/`).
+- CLI, retail: `stub6_call_status=not-established self_checks=pass`, exit `0`.
+  Output JSON SHA-256 `349187ef4e921ab890f8670a86c07daee6a2040b01f1c7dafccbf4ae0e482167` (15,597 bytes, under `data/work/por-ecl-21-dispatch-probe/`).
 - CLI refusals: output outside `data/work/` exit `2`; output inside the install exit `2`.
 - Self-checks (16): all pass, including `inputs_unchanged`, `loop_raw_callers_expected` (9), and
   `handler_far_calls_at_stub_group_0x74D3` (2).

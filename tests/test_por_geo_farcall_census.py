@@ -1,4 +1,4 @@
-"""Tests for the bounded PoR far-call-to-GEO census."""
+"""Tests for the bounded PoR far-call census toward START stub 6 (WALLDEF wrapper entry)."""
 from __future__ import annotations
 
 import os
@@ -12,7 +12,7 @@ sys.path.insert(0, TOOLS)
 import por_geo_farcall_census as census  # noqa: E402
 
 
-TARGET = census.GEO_STUB_F
+TARGET = census.STUB6_F
 HDR = 0x200
 
 
@@ -61,8 +61,8 @@ def test_retail_census_is_pinned_bounded_and_does_not_claim_mapping():
     assert doc["totals"]["far_call_sites"] == 3993
     assert doc["totals"]["far_call_sites_strong"] == 3615
     assert doc["totals"]["far_call_sites_weak_only"] == 378
-    assert doc["totals"]["near_calls_to_geo_body"] == 0
-    assert doc["verdict"]["geo_status"] == census.STATUS_CANDIDATE
+    assert doc["totals"]["near_calls_to_walldef_body"] == 0
+    assert doc["verdict"]["stub6_status"] == census.STATUS_CANDIDATE
     assert doc["verdict"]["candidate_count"] == 181
 
     wrapped = {"schema": census.SCHEMA, "schema_version": census.SCHEMA_VERSION,

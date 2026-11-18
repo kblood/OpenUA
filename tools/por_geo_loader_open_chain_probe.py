@@ -67,7 +67,7 @@ SELECTOR_WRITER = bytes.fromhex("c4 3e d6 49 26 8a 85 24 06 a2 76 53")
 # Name-building bytes in GAME.OVR (the GEO fill procedure and its literal) and other resident checks.
 GEO_FILL_PROC = 0x2F9BE
 GEO_LITERAL_AT = 0x2F994           # length byte of the "\x03GEO" piece (file offset in GAME.OVR)
-GEO_LOADER_BODY = 0x2F6FF
+WALLDEF_WRAPPER_BODY = 0x2F6FF        # stub 6's proc: the WALLDEF wrapper, not the GEO fill
 ECL_LITERAL_AT = 0x190E            # "\x03ECL" piece, GAME.OVR
 START_8X8_LITERAL_AT = 0x723A      # "\x058X8d1" piece, START.EXE
 
@@ -233,7 +233,7 @@ MEMORY_WINDOWS = [
     ("START.EXE", "piece_8X8d1_723A", START_8X8_LITERAL_AT, 11),
     ("GAME.OVR", "geo_literal_2F994", GEO_LITERAL_AT, 9),
     ("GAME.OVR", "geo_fill_proc_2F9BE", GEO_FILL_PROC, 16),
-    ("GAME.OVR", "geo_loader_body_2F6FF", GEO_LOADER_BODY, 16),
+    ("GAME.OVR", "walldef_wrapper_2F6FF", WALLDEF_WRAPPER_BODY, 16),
     ("GAME.OVR", "ecl_literal_190E", ECL_LITERAL_AT, 8),
     ("GAME.OVR", "selector_writer_1FBA7", SELECTOR_WRITER_AT, len(SELECTOR_WRITER)),
 ]

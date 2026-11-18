@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Trace the stub-6 far calls in the shared 0x19BA handler to the GEO wrapper at GAME.OVR 0x2F6FF.
+"""Trace the stub-6 far calls in the shared 0x19BA handler to the WALLDEF wrapper at GAME.OVR 0x2F6FF.
 
-Question: does the stub-6 route give any PoR-byte evidence for the GEO loader's archive selector
-(DS:[0x5376]) or its requested block id (the TOC compare at START 0x88DE)?
+Question: does the stub-6 route give any PoR-byte evidence for the archive selector the wrapper reads
+(DS:[0x5376], the WALLDEF digit) or its requested block id (the loader's TOC compare at START 0x88DE)?
 
 Status: static byte probe plus memory-byte presence. ``playable: false``. Read-only. It never
 claims that a call ran, that a file was opened, or that a GEO block was loaded.
@@ -16,7 +16,7 @@ Findings this tool re-derives from the pinned bytes (see docs/por-ecl-stub6-key-
 * Each call pushes two words: first an id byte (AL), then a gate byte (AL). The wrapper at
   0x2F6FF gates its second argument ``[bp+6]`` to 1..3, and passes its first argument ``[bp+8]``
   to the loader as the requested id.
-* The wrapper builds ``GEO<d>.dax`` from ``DS:[0x5376]``, not from its arguments. No instruction
+* The wrapper builds ``WALLDEF<d>.dax`` from ``DS:[0x5376]``, not from its arguments. No instruction
   in the handler or the wrapper stores to ``DS:[0x5376]``.
 * The id bytes for paths B, C and D come from the far call ``0x002B:0x0025`` (return AL), which is
   not identified here.
@@ -79,7 +79,7 @@ PATH_B_GUARD_2 = bytes.fromhex("26 83 bd d0 01 00 74 1a")  # es cmp [di+464],0 ;
 PATH_D_LOOP_INIT = bytes.fromhex("c6 46 fc 01")            # mov [bp-4],1
 PATH_D_SKIP = bytes.fromhex("80 7b fc ff 74 16")            # cmp [bp+di-4],0xff ; jz 0x1ADD
 PATH_D_LOOP_END = bytes.fromhex("80 7e fc 03 75 b2")        # cmp [bp-4],3 ; jnz 0x1AB7
-# ---- GEO wrapper (GAME.OVR, group base 0x2E8F7 proc 0x0E08) ----
+# ---- WALLDEF wrapper (GAME.OVR, group base 0x2E8F7 proc 0x0E08) ----
 WRAPPER = 0x2F6FF
 WRAPPER_GATE = bytes.fromhex("80 7e 06 01 72 06 80 7e 06 03 76 03 e9 79 02")
 WRAPPER_SEL_LOAD = 0x2F715                                   # a0 76 53 : mov al,[0x5376]

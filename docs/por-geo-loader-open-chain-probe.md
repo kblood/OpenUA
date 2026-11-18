@@ -72,7 +72,7 @@ A window is searched in each dump with far-call segment words wildcarded, since 
 | START piece `8X8d1` | `0x0723A` | unique `0x1F861` | unique `0x1F861` | `0x18627` |
 | GAME.OVR GEO literal | `0x2F994` | absent | absent | - |
 | GAME.OVR GEO fill procedure | `0x2F9BE` | absent | absent | - |
-| GAME.OVR GEO loader body | `0x2F6FF` | absent | absent | - |
+| GAME.OVR WALLDEF wrapper (`walldef_wrapper_2F6FF`; stub 6's proc, not GEO) | `0x2F6FF` | absent | absent | - |
 | GAME.OVR ECL literal | `0x0190E` | ambiguous `0x40FF8`, `0x46808` | same | - |
 | GAME.OVR selector writer | `0x1FBA7` | absent | absent | - |
 

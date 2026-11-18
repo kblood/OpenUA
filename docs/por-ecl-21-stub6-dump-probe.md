@@ -1,9 +1,15 @@
-# PoR ECL 0x21 calls to the GEO loader stub in RAM dumps
+# PoR far-call sites in the 0x19BA handler vs START stub 6 in RAM dumps
 
 **Status: memory-byte target cross-check only. `playable: false`; execution is not established.**
-This probe re-checks four far-call sites in the 0x21/0x37 handler against START stub 6 in two
-existing RAM dumps. It adds a byte-level route that the earlier paragraph-aligned image analysis
-could not model.
+This probe re-checks four far-call sites in the shared 0x19BA handler (reached on the `0x37`
+side of the `0x21`/`0x37` dispatch) against START stub 6 in two existing RAM dumps. It adds a
+byte-level route that the earlier paragraph-aligned image analysis could not model.
+
+**Correction (2026-11-18).** Earlier revisions of this document, and the tool's labels, called
+stub 6's procedure a "GEO loader" and the route an "ECL 0x21" route to the GEO loader. Both were
+wrong. Stub 6 enters the **WALLDEF wrapper** at `GAME.OVR:0x2F6FF`, which builds `WALLDEF<d>.dax`.
+The GEO fill is the separate procedure at `GAME.OVR:0x2F9BE`, and this probe does not test it.
+See [`por-ecl-stub6-key-arg-probe.md`](por-ecl-stub6-key-arg-probe.md) for the byte evidence.
 
 ## Finding
 
@@ -18,10 +24,10 @@ stub 6 is the entry for code offset `0x0E08`; the owner group's file offset is `
 candidate procedure is GAME.OVR `0x2F6FF`, whose file bytes begin with `55 89 E5`.
 
 Thus, **if one of those calls executes with the operands present in the dumps**, its immediate
-far-call target bytes are stub 6, whose file-side procedure field points to the GEO-loader
-candidate at `0x2F6FF`. This is stronger than the earlier `0x1A27` stub-7 prefix match: stub 6's
-five-byte entry matches exactly. It still does not prove execution, INT 3Fh dispatch, or that the
-candidate procedure successfully loads a GEO block.
+far-call target bytes are stub 6, whose file-side procedure field points to the WALLDEF wrapper at
+`0x2F6FF`. This is stronger than the earlier `0x1A27` stub-7 prefix match: stub 6's five-byte entry
+matches exactly. It still does not prove execution, INT 3Fh dispatch, or that the wrapper builds
+or opens any archive.
 
 ## Per-dump result
 
@@ -42,7 +48,7 @@ execution.
 ## Relation to prior results
 
 The zero-skew and paragraph-residue probes remain correct within their stated models: raw
-`03D5:003E` does not resolve to the GEO stub under the zero-skew or paragraph-aligned segment
+`03D5:003E` does not resolve to stub 6 under the zero-skew or paragraph-aligned segment
 arithmetic they tested. The two dumps instead show a concrete live operand and target-byte match
 at this site. This is direct evidence for this address in these snapshots; it does not establish
 a general sub-paragraph relocation rule or reconcile the full START image placement.
@@ -59,8 +65,9 @@ entry and its linked procedure field. The adjacent stub 7 remains discrepant: it
 - The 0x21 handler's reachability from the dispatcher loop is not established.
 - The probe identifies the call target bytes and the stub's procedure field. It does not prove
   the INT 3Fh vector/handler was active at capture time or that it entered the procedure.
-- The proc at `GAME.OVR:0x2F6FF` is a loader candidate. Its archive, block argument, returned
-  result, and association with a particular GEO area remain open.
+- The proc at `GAME.OVR:0x2F6FF` is the WALLDEF wrapper, not a GEO routine. Whether any of the four
+  calls executes, which archive digit the wrapper selects, and whether it returns a block remain
+  open. No GEO load, block, or area association is claimed.
 - No gameplay, conversion, or OpenUA mapping is established.
 
 ## Reproduction

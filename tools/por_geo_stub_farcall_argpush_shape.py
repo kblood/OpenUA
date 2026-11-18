@@ -4,9 +4,9 @@
 STATUS: static-probe-only. ``playable: false``. No events, no mappings, no module output.
 
 Question. The census tools/por_geo_stub_farcall_census.py reports 181 far-call sites whose listed seg word and
-residue rule are compatible with the GEO stub, 166 of them strong (reached by decoded control flow from a stub
+residue rule are compatible with stub 6 (the WALLDEF wrapper entry), 166 of them strong (reached by decoded control flow from a stub
 proc). For those 166 strong sites ONLY: does the instruction sequence immediately before the ``9A`` call resemble
-the GEO loader's known caller shape?
+the loader's known caller shape? (The loader is the generic DAX loader at START 0x876D.)
 
 The known shape (docs/por-geo-loader-caller-frame-probe.md, and the loader probe's SHAPE_RE it reuses) is ten
 pushed bytes before ``9A 16 07 02 08``: one id word, then two far pointers. Each far pointer is pushed as

@@ -137,7 +137,7 @@ def analyze(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes]], *, pins: dic
         "dumps": rows,
         "not_established": ["that any of the four far calls executed",
                             "that the ECL 0x21 arm or its handler is runtime-reachable",
-                            "that the mapped stub's INT 3Fh dispatch reached the GEO procedure",
+                            "that the mapped stub's INT 3Fh dispatch reached the WALLDEF wrapper (proc 0x2F6FF)",
                             "the call arguments' meaning or a GEO archive/block mapping"],
     }
 

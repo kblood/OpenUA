@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Cross-check conditional PoR GEO-stub far-call candidates against RAM dumps.
+"""Cross-check conditional PoR far-call candidates toward START stub 6 (WALLDEF wrapper entry) against RAM dumps.
+
+Naming: the ``geo`` in the file name is historical. Stub 6 is not the GEO loader; see the census naming note.
 
 Static candidates come from ``por_geo_farcall_census``. For each supplied dump,
 this probe uniquely maps any resident owner group using stable code bytes, reads
 the candidate's live far-call segment word, and compares the observed fixup
-delta with the delta required to reach the GEO loader stub under the census's
+delta with the delta required to reach stub 6 under the census's
 paragraph-aligned MZ model. It also records whether the live target window
-matches the GEO stub's START.EXE file offset.
+matches stub 6's START.EXE file offset.
 
 The probe is read-only. A memory match establishes presence in a dump only; it
 does not establish that the call executed or that the dump is atomic.
@@ -59,9 +61,9 @@ def check_out(out: Path, install: Path) -> None:
         raise CrosscheckRefusal("output folder must be under data/work/") from exc
 
 
-def _target_hits_geo_stub(row: dict) -> bool:
+def _target_hits_stub6(row: dict) -> bool:
     hits = row.get("window", {}).get("hits", {}).get(census.EXE_NAME, [])
-    return census._hex(census.GEO_STUB_F) in hits
+    return census._hex(census.STUB6_F) in hits
 
 
 def candidate_observation(candidate: dict, owner: dict, mapped_group: Optional[dict]) -> dict:
@@ -101,7 +103,7 @@ def candidate_observation(candidate: dict, owner: dict, mapped_group: Optional[d
         "target_linear": row["target_linear"],
         "target_window_status": row["window"]["status"],
         "target_window_start_exe_offsets": row["window"].get("hits", {}).get(census.EXE_NAME, []),
-        "target_window_matches_geo_stub": _target_hits_geo_stub(row),
+        "target_window_matches_stub6": _target_hits_stub6(row),
     }
 
 
@@ -137,7 +139,7 @@ def analyze_dump(start: bytes, ovr: bytes, dump_data: bytes, dump_name: str,
         "candidate_owner_rows_with_live_callsite": len(covered),
         "candidate_constraints_matching_observed_delta": sum(
             r["delta_matches_candidate_constraint"] for r in covered),
-        "targets_matching_geo_stub_bytes": sum(r["target_window_matches_geo_stub"] for r in covered),
+        "targets_matching_stub6_bytes": sum(r["target_window_matches_stub6"] for r in covered),
         "candidate_rows_unobserved": len(observations) - len(covered),
     }
     return {
@@ -179,11 +181,11 @@ def build_report(install: Path, dump_paths: list[Path]) -> dict:
                           for name, data in sorted(inputs.items())},
         "source_inputs_unchanged": unchanged,
         "static_census": {
-            "status": static["verdict"]["geo_status"],
+            "status": static["verdict"]["stub6_status"],
             "candidate_count": static["verdict"]["candidate_count"],
-            "near_calls_to_geo_body": static["totals"]["near_calls_to_geo_body"],
-            "geo_stub_file": static["geo_stub_file"],
-            "geo_body_file": census._hex(census.GEO_BODY),
+            "near_calls_to_walldef_body": static["totals"]["near_calls_to_walldef_body"],
+            "stub6_file": static["stub6_file"],
+            "walldef_body_file": census._hex(census.WALLDEF_BODY),
         },
         "captures": captures,
         "runtime_claims": {"executed": "not_established", "called": "not_established",
@@ -193,7 +195,7 @@ def build_report(install: Path, dump_paths: list[Path]) -> dict:
 
 def render_report(doc: dict) -> str:
     lines = [
-        "# PoR GEO far-call candidate dump cross-check",
+        "# PoR far-call candidate dump cross-check toward START stub 6 (WALLDEF wrapper)",
         "",
         "**Static/memory-presence diagnostic only. `playable: false`; no GEO",
         "binding is established.** A mapped callsite and target byte window show",
@@ -202,9 +204,9 @@ def render_report(doc: dict) -> str:
         "## Static census",
         "",
         "- candidate far-call sites: %d" % doc["static_census"]["candidate_count"],
-        "- direct near calls to GEO body: %d" % doc["static_census"]["near_calls_to_geo_body"],
-        "- GEO stub: START.EXE %s; GEO body: GAME.OVR %s"
-        % (doc["static_census"]["geo_stub_file"], doc["static_census"]["geo_body_file"]),
+        "- direct near calls to the WALLDEF wrapper: %d" % doc["static_census"]["near_calls_to_walldef_body"],
+        "- Stub 6: START.EXE %s; WALLDEF wrapper: GAME.OVR %s"
+        % (doc["static_census"]["stub6_file"], doc["static_census"]["walldef_body_file"]),
         "",
     ]
     for capture in doc["captures"]:
@@ -217,12 +219,12 @@ def render_report(doc: dict) -> str:
             % (t["groups_mapped_unique"], t["groups_parsed"]),
             "- candidate owner rows with live callsite: %d / %d"
             % (t["candidate_owner_rows_with_live_callsite"], t["candidate_owner_rows"]),
-            "- required-delta matches: %d; target windows matching the GEO stub: %d"
+            "- required-delta matches: %d; target windows matching stub 6: %d"
             % (t["candidate_constraints_matching_observed_delta"],
-               t["targets_matching_geo_stub_bytes"]),
+               t["targets_matching_stub6_bytes"]),
             "- candidate rows in absent or unmapped groups: %d" % t["candidate_rows_unobserved"],
             "",
-            "| owner group | callsite | raw:live segment | observed delta | required delta | target window | GEO stub bytes |",
+            "| owner group | callsite | raw:live segment | observed delta | required delta | target window | stub-6 bytes |",
             "| --- | --- | --- | ---: | ---: | --- | --- |",
         ]
         for row in capture["candidate_observations"]:
@@ -233,7 +235,7 @@ def render_report(doc: dict) -> str:
                 row["observed_delta_mod64k"],
                 ("0x%04X" % row["static_di_constraint_mod64k"])
                 if row["static_di_constraint_mod64k"] is not None else "unlisted/unknown",
-                row["target_window_status"], str(row["target_window_matches_geo_stub"]).lower()))
+                row["target_window_status"], str(row["target_window_matches_stub6"]).lower()))
         if not any(r["observation"] == "mapped-live-callsite"
                    for r in capture["candidate_observations"]):
             lines.append("| none mapped | | | | | | |")
@@ -263,7 +265,7 @@ def write_outputs(doc: dict, out: Path) -> None:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    ap = argparse.ArgumentParser(description="Cross-check PoR GEO-loader far-call candidates against RAM dumps.")
+    ap = argparse.ArgumentParser(description="Cross-check PoR far-call candidates toward START stub 6 against RAM dumps.")
     ap.add_argument("--install", required=True, type=Path, help="folder holding pinned GAME.OVR and START.EXE")
     ap.add_argument("--dump", required=True, type=Path, action="append",
                     help="raw RAM dump named ram-LO-HI.bin; repeatable")

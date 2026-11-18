@@ -1,10 +1,12 @@
-# Pool of Radiance: far-call census toward the GEO load stub
+# Pool of Radiance: far-call census toward START stub 6 (WALLDEF wrapper)
 
 **Status: STATIC-PROBE-ONLY. `playable: false`, `established: false`, `mappings: []`.**
 
 Tool: `tools/por_geo_stub_farcall_census.py`. Tests: `tests/test_por_geo_stub_farcall_census.py` (23 synthetic,
 7 retail-gated; 30 pass with `OPENUA_POR_INSTALL` set). Output (git-ignored):
 `data/work/por-geo-stub-farcall-census/retail/` (`.json`, `.md`).
+
+> **Reassessment (2026-11-18).** Stub 6 enters the WALLDEF wrapper, not the GEO loader. This census is not a GEO result. See [`por-geo-farcall-census.md`](por-geo-farcall-census.md) for the withdrawn GEO conclusion.
 
 > **Name collision.** A tool and test with the names `por_geo_farcall_census.py` /
 > `test_por_geo_farcall_census.py` are already committed (`01363944`, Kasper Olesen). This census
@@ -16,13 +18,13 @@ Tool: `tools/por_geo_stub_farcall_census.py`. Tests: `tests/test_por_geo_stub_fa
 ## Question and answer
 
 > Across every parsed GAME.OVR overlay body, which instruction-decoded far calls could resolve to the
-> GEO stub at `START.EXE` offset `15884` (`0x3E0C`, group `0x3DD7` index 6, proc `0x0E08` into
-> `GAME.OVR:0x2F6FF`)?
+> stub 6 at `START.EXE` offset `15884` (`0x3E0C`, group `0x3DD7` index 6, proc `0x0E08` into
+> the WALLDEF wrapper `GAME.OVR:0x2F6FF`)?
 
 **Answer: 181 of 3,993 decoded far-call sites pass the residue rule, and none of them is a
 binding.** Every one is a listed-seg-word site whose offset happens to be `≡ 0xC (mod 16)`, so the
 DI delta is not established for any of them. The literal test is never exercised: all 3,993 sites
-have a listed seg word. No decoded near `E8` reaches the GEO body. The result is a base-rate
+have a listed seg word. No decoded near `E8` reaches the WALLDEF wrapper body. The result is a base-rate
 effect of the rule, not evidence about the stub.
 
 | Question | Answer | Class |
@@ -34,9 +36,9 @@ effect of the rule, not evidence about the stub.
 | Sites with listed offset word | 0 | table-membership |
 | Residue-compatible (`off ≡ 0xC`) | 181 (166 strong) | arithmetic |
 | Literal exact hit (unlisted seg) | 0 (not reached) | arithmetic |
-| Near `E8` to GEO body `0x2F6FF` | 0 | decoded |
-| GEO group `0x2E8F7` parsed, body decoded | yes (40 far, 24 strong, 48 near) | decoded |
-| `geo_status` | `candidate-given-di-not-established` | verdict |
+| Near `E8` to the WALLDEF wrapper `0x2F6FF` | 0 | decoded |
+| Owner group `0x2E8F7` (stub 6's) parsed, body decoded | yes (40 far, 24 strong, 48 near) | decoded |
+| `stub6_status` | `candidate-given-di-not-established` | verdict |
 
 The verdict label is the rule's own output. Read it as "181 sites are arithmetically possible
 given an unknown DI", not as a target.
@@ -65,9 +67,9 @@ given an unknown DI", not as a target.
 
 - **Handler control.** The eleven far calls of the `0x19BA` handler are all decoded inside group `0x0D46`,
   and each per-site skew matches `por_ecl_21_fixup_residue_probe.residue_for` (skews `2,7,9,1,7,14,14,14,14,3,5`).
-- **GEO stub.** Bytes `CD 3F 08 0E 00` at `15884`, group `0x3DD7`, index 6, proc `0x0E08`, owner
+- **Stub 6.** Bytes `CD 3F 08 0E 00` at `15884`, group `0x3DD7`, index 6, proc `0x0E08`, owner
   `0x2E8F7`. Every structural check holds, so no `precondition-failed` is returned.
-- **GEO body decode.** `0x2F6FF` is a decoded instruction start in group `0x2E8F7`.
+- **WALLDEF wrapper decode.** `0x2F6FF` is a decoded instruction start in group `0x2E8F7`.
 
 ## Coverage labels
 
@@ -91,8 +93,8 @@ Synthetic (`tests/test_por_geo_stub_farcall_census.py`):
 - Decode is deterministic.
 - Output inside the install, or outside `data/work/`: refused.
 
-Retail (gated): pins, 34/24/10 group counts, 3,993 far sites and owner rows, zero near calls to the GEO
-body, status counts limited to the two listed-seg statuses, 181 candidates, the eleven handler skews,
+Retail (gated): pins, 34/24/10 group counts, 3,993 far sites and owner rows, zero near calls to the WALLDEF
+wrapper body, status counts limited to the two listed-seg statuses, 181 candidates, the eleven handler skews,
 and the two incomplete groups.
 
 ## Commands and results
@@ -105,9 +107,9 @@ python -I tools/por_geo_stub_farcall_census.py --install "G:/Games/Pool of Radia
 ```
 
 Output hashes (retail run): `por_geo_stub_farcall_census.json`
-`03259191758cc8978db859ee2b24667d03d9b8df3c8b0710302e91f1444d98b0`; `.md`
-`21f28224c83b9cfb37760fb173a1d5ccd3f3d2146a71e6978294b2b795fd8de3`; tool
-`3e76a0dfd70c85a2499c1130547b5999d03182f71897b0a4d5238527abec5303`.
+`b82b867fcb8931035e13dd60b2ca5ffd35dd7c36be780c6d21d55234f31710eb`; `.md`
+`9c4b50fa6c64572e2a7508f6efbf4b542a8dc1a2428dde079c40a2f3c27cbcfb`; tool
+`4ac473fa2a7aa3f841d35b538d7bf9945ddef2db2b54de02378eef916602abf8`.
 
 Inputs were not written. Both pins matched and the install was hashed before and after the run.
 

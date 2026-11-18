@@ -50,15 +50,15 @@
   linear-only offsets. The disagreement confirms model sensitivity; it supplies
   no runtime loads or art bindings. See
   [`por-ecl-cfg-loadpieces-census.md`](por-ecl-cfg-loadpieces-census.md).
-- **GEO-loader far-call census** (`tools/por_geo_farcall_census.py`): decodes
+- **Far-call census toward stub 6** (`tools/por_geo_farcall_census.py`; the `geo` name is historical, and the anchor is stub 6, the WALLDEF wrapper, not GEO): decodes
   bounded paths in parsed GAME.OVR groups and checks far-call operands against
   their fixup tables. The pinned retail run found 181 arithmetic candidates but
   no established caller or GEO mapping. See
   [`por-geo-farcall-census.md`](por-geo-farcall-census.md).
-- **GEO far-call dump cross-check** (`tools/por_geo_farcall_dump_crosscheck.py`):
+- **Far-call dump cross-check toward stub 6** (`tools/por_geo_farcall_dump_crosscheck.py`):
   compares those conditional candidates with two captured RAM dumps. The 90
   mapped sites per dump have delta `0x1866`, with no candidate-constraint match
-  or target window matching the GEO stub; 91 candidate rows remain unobserved in
+  or target window matching stub 6; 91 candidate rows remain unobserved in
   absent or unmapped groups. This is capture-scoped memory evidence, not proof
   that a call ran. See
   [`por-geo-farcall-dump-crosscheck.md`](por-geo-farcall-dump-crosscheck.md).
@@ -135,7 +135,7 @@ cross-checks only; none of them is used as a PoR fact.
   candidate fill `0x10C7`; the helper's return meaning is unknown. The `03D5:0043`
   dump cross-check matches only the first four bytes of stub 7. A separate probe
   finds that four `03D5:003E` call targets match stub 6 exactly in five bytes in
-  both dumps, and stub 6's proc word points to the GEO-loader candidate `0x2F6FF`.
+  both dumps, and stub 6's proc word points to the WALLDEF wrapper `0x2F6FF` (not a GEO routine).
   These are memory-byte target checks at unknown instants, not execution or
   successful-load evidence; the paragraph-aligned model still cannot explain those
   sites. See [`por-ecl-21-stub6-dump-probe.md`](por-ecl-21-stub6-dump-probe.md).
@@ -220,9 +220,9 @@ cross-checks only; none of them is used as a PoR fact.
   the same slot, and its static owner calls it 18 times. This is consistent with five
   156-byte slices per 780-byte record. The group and runtime path remain unproven,
   and no archive, block, tile, or screen binding is established.
-- **GEO load-site layout** (`tools/por_area_evidence.py`, see
-  [`por-area-evidence.md`](por-area-evidence.md)). The GEO load routine's layout owner
-  is `GAME.OVR:0x2F6FF`, found by layout only. After the walk bound was corrected, the
+- **Layout candidate for the GEO literal's owner** (`tools/por_area_evidence.py`, see
+  [`por-area-evidence.md`](por-area-evidence.md)). The layout owner of the GEO literal
+  is the WALLDEF wrapper `GAME.OVR:0x2F6FF`, found by layout only (not a GEO load routine). After the walk bound was corrected, the
   probe also detects a WALLDEF layout owner at `GAME.OVR:0x2EEF4`. That owner is a
   layout candidate only. No reference, caller or art binding is shown. Block-to-area,
   start area and start entry remain unknown.
@@ -241,7 +241,7 @@ cross-checks only; none of them is used as a PoR fact.
   decimal formatter whose leading digit is appended to the `GEO` stem and carried into the
   composed open path, conditional on module/loader/wrapper identities. The DS prefix and runtime
   selector are unresolved, so no archive, block or area mapping follows.
-- **GEO source loader target** (`tools/por_geo_loader_target_probe.py`, see
+- **Loader target at START `0x876D`** (`tools/por_geo_loader_target_probe.py`, see
   [`por-geo-loader-target-probe.md`](por-geo-loader-target-probe.md) and
   [`por-geo-loader-caller-frame-probe.md`](por-geo-loader-caller-frame-probe.md)). Existing dumps
   conditionally place the live target `0x2068:0x0716` at START.EXE `0x876D`; that body reads two far

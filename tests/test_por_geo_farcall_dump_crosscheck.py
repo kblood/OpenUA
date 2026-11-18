@@ -1,4 +1,4 @@
-"""Tests for the capture-scoped PoR GEO far-call cross-check."""
+"""Tests for the capture-scoped PoR far-call cross-check toward START stub 6."""
 from __future__ import annotations
 
 import os
@@ -20,30 +20,30 @@ def _candidate():
     }
 
 
-def _mapped(seg_live="0x2866", geo_hit=True):
+def _mapped(seg_live="0x2866", stub6_hit=True):
     return {"far_call_sites": [{
         "site_file_offset": "0x0100", "opcode_0x9a": True,
         "offset_matches_file": True, "seg_raw": "0x1000", "seg_live": seg_live,
         "target_linear": "0x2866C", "window": {
             "status": "unique-START.EXE",
-            "hits": {"START.EXE": ["0x3E0C"] if geo_hit else ["0x4200"]},
+            "hits": {"START.EXE": ["0x3E0C"] if stub6_hit else ["0x4200"]},
         },
     }]}
 
 
-def test_candidate_observation_matches_live_delta_and_geo_stub_window():
+def test_candidate_observation_matches_live_delta_and_stub6_window():
     row = cross.candidate_observation(_candidate(), _candidate()["owners"][0], _mapped())
     assert row["observation"] == "mapped-live-callsite"
     assert row["observed_delta_mod64k"] == 0x1866
     assert row["delta_matches_candidate_constraint"] is True
-    assert row["target_window_matches_geo_stub"] is True
+    assert row["target_window_matches_stub6"] is True
 
 
 def test_candidate_observation_rejects_wrong_live_delta_and_other_start_window():
     row = cross.candidate_observation(_candidate(), _candidate()["owners"][0],
-                                      _mapped(seg_live="0x2000", geo_hit=False))
+                                      _mapped(seg_live="0x2000", stub6_hit=False))
     assert row["delta_matches_candidate_constraint"] is False
-    assert row["target_window_matches_geo_stub"] is False
+    assert row["target_window_matches_stub6"] is False
 
 
 def test_absent_owner_group_stays_unobserved():
@@ -87,7 +87,7 @@ def test_pinned_dumps_eliminate_mapped_candidates_only(tmp_path):
         assert totals["candidate_owner_rows"] == 181
         assert totals["candidate_owner_rows_with_live_callsite"] == 90
         assert totals["candidate_constraints_matching_observed_delta"] == 0
-        assert totals["targets_matching_geo_stub_bytes"] == 0
+        assert totals["targets_matching_stub6_bytes"] == 0
         assert totals["candidate_rows_unobserved"] == 91
         observed = [r for r in capture["candidate_observations"]
                     if r["observation"] == "mapped-live-callsite"]

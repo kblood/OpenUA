@@ -138,5 +138,4 @@ Dumps: `data/work/por-live-memory-pid34644/ram-000000-100000.bin` (SHA-256 prefi
   `por_overlay_group_map` (pins, install lookup), and `por_convert` (output-directory check).
 - No edits to existing docs, source, or tests. The stale "GEO" labels in
   [por-ecl-21-stub6-dump-probe.md](por-ecl-21-stub6-dump-probe.md) and
-  [por-ecl-21-dispatch-probe.md](por-ecl-21-dispatch-probe.md) are not changed here; they should be corrected in a
-  separate commit that owns those files.
+  [por-ecl-21-dispatch-probe.md](por-ecl-21-dispatch-probe.md) were corrected later on 2026-11-18 in the stub-6 correction commit, which owns those files.

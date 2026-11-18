@@ -110,9 +110,9 @@ Install `data/work/por-geo-run/POOLRAD`: both pins matched; hashed before and af
 
 | Output | SHA-256 |
 | --- | --- |
-| `por_geo_stub_farcall_argpush_frame.json` | `1fe1cb3c3136261a15e7ca1a388ae9019afcc4cba980680d6dba4cdef303f9a3` |
-| `por_geo_stub_farcall_argpush_frame.md` | `9c9f49e35f97508ff05126c43fcff511d39edbc768fd1e5a10a7ae06b68d8759` |
-| `tools/por_geo_stub_farcall_argpush_frame.py` (as run) | `ec6a41d30a27c17d4beecd19f6a68e7af3b23c8d62cf7c52ae91be53975e001c` |
+| `por_geo_stub_farcall_argpush_frame.json` | `d08bda9b3ee9b01811bcf445cb573a5e72b4b9ce71ca05f75bb40d1fcbaad401` |
+| `por_geo_stub_farcall_argpush_frame.md` | `559a35a34128a56c0a71501918039551fe56f4ac6da6e34ea9224062bff68dbf` |
+| `tools/por_geo_stub_farcall_argpush_frame.py` (as run) | `600bae64328bcaec8da04cc5594dfbc76221b337fe29243eb1ba6711259877d8` |
 
 - No retail write. The probe writes only under `data/work/por-geo-stub-farcall-argpush-frame/`. Its refusals cover an
   unpinned or missing install, an output outside `data/work`, and an output inside the install.
@@ -134,7 +134,7 @@ Install `data/work/por-geo-run/POOLRAD`: both pins matched; hashed before and af
 ## Not established
 
 - That any of the nine sites runs, or that any call at them executes.
-- That `0085:005C` is the GEO loader, the GEO stub, or any census body. Its segment base is not established.
+- That `0085:005C` is the loader, stub 6, or any census body. The shape matches are not a GEO result. Its segment base is not established.
 - The pops of `0085:005C`, `03C5:0039`, and `00BA:16EC`. They are swept as requirements only.
 - The pops of the unswept callees (`0709:0D68`, `0085:0057`, `0096:003E`, `00BA:1693`, `03F1:0137`, `00BA:1816`, `0709:0626`,
   `00BA:1037`, `00AC:0025`) and anything about the three undecided sites.

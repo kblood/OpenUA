@@ -17,7 +17,10 @@ What it measures, from the retail bytes only:
     Turbo Pascal length-prefixed string piece, with its file offset;
   * for each literal, whether the bytes immediately before its block are the
     ``ret``/``retf`` of exactly one procedure whose prologue lies a short way
-    back (a layout candidate for the owning procedure, not a proof);
+    back (a layout candidate for the owning procedure, not a proof). On the retail install the candidate
+    for the GEO literal is the WALLDEF wrapper at GAME.OVR 0x2F6FF (stub 6's procedure), not the GEO load
+    routine: the literal is read by ``mov di,0x109D`` at 0x2F9E5, inside the fill at 0x2F9BE. A layout
+    candidate is not a use, and this probe does not check use sites;
   * the decoded argument checks, return width and call sites of that procedure;
   * whether the procedure's CS-relative string operands (``mov r,imm`` then
     ``push cs``) resolve to Pascal strings under any single overlay base;
@@ -532,7 +535,7 @@ def render_report(doc: dict) -> str:
             r["overlay_group"]))
     L.append("")
     lr = doc["load_routine"]
-    L.append("## Load routine candidate (layout only)")
+    L.append("## Layout candidate for the GEO literal's owner (layout only; not a GEO load routine)")
     L.append("")
     if lr is None:
         L.append("No GEO literal with a layout owner was found.")

@@ -5,7 +5,7 @@
 ## Handoff
 
 - **Verdict: `imm-id-shape-only`.** Of the **166** strong residue-compatible far-call sites (census: 181 candidates,
-  166 strong), **9** are preceded by the GEO loader's known two-far-pointer push shape. In all nine the id word is
+  166 strong), **9** are preceded by the known two-far-pointer push shape of the loader (START `0x876D`). In all nine the id word is
   pushed as `mov al,imm8; push ax`. **None (0)** uses the documented id form `mov al,[bp+d8]; push ax`.
 - **The id form does not separate them from the loader.** The loader's own ten static call sites use both forms:
   nine documented, and START `0x7276` with `mov al,imm8`. So the nine are a shape match in the loader-caller sense,
@@ -37,7 +37,7 @@
 ## Question
 
 > Among the 166 strong residue-compatible far-call sites, does the instruction sequence immediately before the `9A`
-> call resemble the GEO loader's known caller shape?
+> call resemble the loader's known caller shape? (The loader is the generic DAX loader at START `0x876D`.)
 
 Only the strong sites were analysed. The 15 weak-only residue candidates are out of scope and are not in any table.
 
@@ -121,6 +121,8 @@ Seven of the nine share group `0x17831`. Each owner coverage is `strong-walk-cle
 | START.EXE | `0x47E0` | `0x478A` | documented id | `mov-al-bp` | 2 | yes |
 | START.EXE | `0x7276` | `0x7245` | **imm8 id** | `mov-al-imm` | 2 | yes |
 
+The second column is the enclosing procedure (consistent with the `0x2FA17` site inside the GEO fill at `0x2F9BE`). The `0x2F767` site is inside the WALLDEF wrapper (`0x2F6FF`), not the GEO fill.
+
 The scan agrees with the byte regex at all ten sites. The imm8 id at START `0x7276` is the reason the imm8 form cannot
 be treated as "not the loader shape".
 
@@ -135,7 +137,7 @@ be treated as "not the loader shape".
 ## What is not established
 
 - That any of the nine sites runs, that its callee `0085:005C` is reached, or that any call is executed at any instant.
-- That `0085:005C` is the loader, the GEO stub, or any body in the census. Its segment base is not established
+- That `0085:005C` is the loader, stub 6, or any body in the census. Its segment base is not established
   (the census's residue rule assumes an unknown DI).
 - The callee's `retf` count, the caller's stack balance after the call, and the contents of any pointer.
 - Any GEO archive, block, area, or plane-2 mapping. Nothing here is a binding.
@@ -160,9 +162,9 @@ Install: `data/work/por-geo-run/POOLRAD` (both pins matched; hashed before and a
 
 | Output | SHA-256 |
 | --- | --- |
-| `por_geo_stub_farcall_argpush_shape.json` | `5bf6895d74580b08eecb064b24cbb7158206f8b16ed638425517a889f73c1bb9` |
+| `por_geo_stub_farcall_argpush_shape.json` | `8d73a51a173181ac5bcab228a1a73e97923b947bf12625a7e7f8174a0f8d9d96` |
 | `por_geo_stub_farcall_argpush_shape.md` | `8fbaa45fc1b72897da8be8dad4a9ff465fc1184bbf25fca291ae584de9fbf6bd` |
-| `tools/por_geo_stub_farcall_argpush_shape.py` (as run) | `20ff3fd37e6e76fde4d905e4e317d9e07db7fd2da1c657a937d1cbc692f8a762` |
+| `tools/por_geo_stub_farcall_argpush_shape.py` (as run) | `2efc209bdb0d0981136e67830003888a355fb1f05551546b19926b3bc25d370b` |
 
 - No retail write. The probe writes only under `data/work/`. The census, caller-frame and loader modules, their tests
   and their docs were imported read-only and are unchanged.

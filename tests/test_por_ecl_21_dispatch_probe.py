@@ -7,7 +7,7 @@ exercised separately, with a refusal).
 
 Mutation controls work on in-memory copies of the retail GAME.OVR. Each mutation changes one thing and
 the named verdict or self-check must change with it. The positive control retargets one far call onto
-the GEO stub and must flip the status to candidate-edge; the negative control moves that stub's proc
+stub 6 and must flip the status to candidate-edge; the negative control moves that stub's proc
 word and must remove the candidate. Together they show the verdict follows the bytes, both ways.
 """
 
@@ -29,8 +29,8 @@ needs_retail = pytest.mark.skipif(not RETAIL, reason="OPENUA_POR_INSTALL not set
 ARM_CMP_AT = 0x3D9A           # cmp al,0x21 (3C 21)
 ARM_CALL_AT = 0x3DA3          # E8 rel16 into the 0x19BA handler (after push cs at 0x3DA2)
 FAR_19C3 = 0x19C3             # 9A 2A 00 2B 00  call 0x002B:0x002A (stub 21 of group 0x74D3)
-GEO_STUB_OFF = 15884          # START.EXE offset: stub index 6 of partial group (run at 15854): CD 3F <0E08> 00
-GEO_PROC = 0x0E08             # 3592: 0x2E8F7 + 0xE08 == 0x2F6FF (the proc word is in START.EXE, not GAME.OVR)
+STUB6_OFF = 15884          # START.EXE offset: stub index 6 of partial group (run at 15854): CD 3F <0E08> 00
+STUB6_PROC = 0x0E08             # 3592: 0x2E8F7 + 0xE08 == 0x2F6FF (the proc word is in START.EXE, not GAME.OVR)
 
 
 def _retail():
@@ -73,12 +73,12 @@ def test_output_under_data_work_is_accepted(tmp_path):
 def test_pins_are_the_retail_sizes():
     assert p.PINS["GAME.OVR"][0] == 206105
     assert p.PINS["START.EXE"][0] == 65231
-    assert p.GEO_BODY == 0x2F6FF
+    assert p.WALLDEF_BODY == 0x2F6FF
     assert p.LOOP_ENTRY == 0x3EB7 and p.DISPATCH_ENTRY == 0x3C73
 
 
 # ---------------------------------------------------------------------------------------------
-# Retail: expected reading, the GEO entry, and the reachability limit
+# Retail: expected reading, the stub-6 entry, and the reachability limit
 # ---------------------------------------------------------------------------------------------
 
 @needs_retail
@@ -127,10 +127,10 @@ def test_retail_handler_has_no_near_or_indirect_calls_and_eleven_far_calls():
 
 
 @needs_retail
-def test_retail_geo_body_is_a_prologue_with_one_partial_stub_candidate():
+def test_retail_walldef_body_is_a_prologue_with_one_partial_stub_candidate():
     install, ovr, start = _retail()
-    assert ovr[p.GEO_BODY:p.GEO_BODY + 3] == p.GEO_BODY_PRO
-    cands = p.geo_stub_candidates(start, ovr, p.GEO_BODY)
+    assert ovr[p.WALLDEF_BODY:p.WALLDEF_BODY + 3] == p.WALLDEF_BODY_PRO
+    cands = p.stub6_candidates(start, ovr, p.WALLDEF_BODY)
     valid = [c for c in cands if c["stub_valid"]]
     assert len(valid) == 1
     assert valid[0]["group_fileofs"] == "0x2E8F7"
@@ -140,12 +140,12 @@ def test_retail_geo_body_is_a_prologue_with_one_partial_stub_candidate():
 
 
 @needs_retail
-def test_retail_far_calls_do_not_reach_the_geo_stub_under_zero_skew():
+def test_retail_far_calls_do_not_reach_stub6_under_zero_skew():
     _, ovr, start = _retail()
     doc = p.analyse(ovr, start)
-    assert doc["geo"]["geo_call_status"] == "not-established"
-    assert doc["geo"]["zero_skew_edges_to_geo"] == []
-    assert len(doc["geo"]["model_dependent_far_calls"]) == 9
+    assert doc["stub6"]["stub6_call_status"] == "not-established"
+    assert doc["stub6"]["zero_skew_edges_to_stub6"] == []
+    assert len(doc["stub6"]["model_dependent_far_calls"]) == 9
     stub_rows = [r for r in doc["far"]["rows"] if r["stub"] is not None]
     assert [r["stub"]["gameovr_target"] for r in stub_rows] == ["0x92C3", "0x9196"]
 
@@ -181,7 +181,7 @@ def test_control_moved_compare_removes_the_arm():
     m[ARM_CMP_AT + 1] = 0xEE
     doc = p.analyse(bytes(m), start)
     assert doc["arm"]["present"] is False
-    assert doc["geo"]["geo_call_status"] == "arm-absent"
+    assert doc["stub6"]["stub6_call_status"] == "arm-absent"
 
 
 @needs_retail
@@ -199,35 +199,35 @@ def test_control_retargeted_dispatch_call_breaks_the_handler_check():
 
 
 @needs_retail
-def test_positive_control_far_call_onto_geo_stub_flips_to_candidate_edge():
-    """Retarget the 0x19C3 far call to seg:off 0x03C0:0x000C. Image 512+0x3C0*16+0xC == 15884, the GEO stub."""
+def test_positive_control_far_call_onto_stub6_flips_to_candidate_edge():
+    """Retarget the 0x19C3 far call to seg:off 0x03C0:0x000C. Image 512+0x3C0*16+0xC == 15884, stub 6."""
     _, ovr, start = _retail()
     m = bytearray(ovr)
     assert m[FAR_19C3:FAR_19C3 + 5] == b"\x9a\x2a\x00\x2b\x00"
     m[FAR_19C3:FAR_19C3 + 5] = b"\x9a\x0c\x00\xc0\x03"
     doc = p.analyse(bytes(m), start)
-    assert doc["geo"]["geo_call_status"] == "candidate-edge"
-    hits = doc["geo"]["zero_skew_edges_to_geo"]
+    assert doc["stub6"]["stub6_call_status"] == "candidate-edge"
+    hits = doc["stub6"]["zero_skew_edges_to_stub6"]
     assert [(h["at"], h["group_header"], h["stub_index"]) for h in hits] == [("0x19C3", "0x3DD7", 6)]
 
 
-def _moved_geo_stub(start: bytes) -> bytes:
+def _moved_stub6(start: bytes) -> bytes:
     s = bytearray(start)
-    assert s[GEO_STUB_OFF:GEO_STUB_OFF + 4] == b"\xcd\x3f" + struct.pack("<H", GEO_PROC)[:2]
-    struct.pack_into("<H", s, GEO_STUB_OFF + 2, GEO_PROC + 1)
+    assert s[STUB6_OFF:STUB6_OFF + 4] == b"\xcd\x3f" + struct.pack("<H", STUB6_PROC)[:2]
+    struct.pack_into("<H", s, STUB6_OFF + 2, STUB6_PROC + 1)
     return bytes(s)
 
 
 @needs_retail
-def test_negative_control_moved_geo_stub_removes_the_candidate():
-    """Move the GEO stub's proc word (in START.EXE) by one byte. No stub now names 0x2F6FF: no candidate."""
+def test_negative_control_moved_stub6_removes_the_candidate():
+    """Move stub 6's proc word (in START.EXE) by one byte. No stub now names 0x2F6FF: no candidate."""
     _, ovr, start = _retail()
-    s2 = _moved_geo_stub(start)
-    assert p.geo_stub_candidates(start, ovr, p.GEO_BODY) != []
-    assert p.geo_stub_candidates(s2, ovr, p.GEO_BODY) == []
+    s2 = _moved_stub6(start)
+    assert p.stub6_candidates(start, ovr, p.WALLDEF_BODY) != []
+    assert p.stub6_candidates(s2, ovr, p.WALLDEF_BODY) == []
     doc = p.analyse(ovr, s2)
-    assert doc["geo"]["geo_stub_candidates"] == []
-    assert doc["geo"]["geo_call_status"] == "not-established"
+    assert doc["stub6"]["stub6_candidates"] == []
+    assert doc["stub6"]["stub6_call_status"] == "not-established"
 
 
 @needs_retail
@@ -236,7 +236,7 @@ def test_positive_and_negative_controls_are_independent():
     _, ovr, start = _retail()
     m = bytearray(ovr)
     m[FAR_19C3:FAR_19C3 + 5] = b"\x9a\x0c\x00\xc0\x03"
-    assert p.analyse(bytes(m), start)["geo"]["geo_call_status"] == "candidate-edge"
-    doc = p.analyse(bytes(m), _moved_geo_stub(start))
-    assert doc["geo"]["geo_call_status"] == "not-established"
-    assert doc["geo"]["zero_skew_edges_to_geo"] == []
+    assert p.analyse(bytes(m), start)["stub6"]["stub6_call_status"] == "candidate-edge"
+    doc = p.analyse(bytes(m), _moved_stub6(start))
+    assert doc["stub6"]["stub6_call_status"] == "not-established"
+    assert doc["stub6"]["zero_skew_edges_to_stub6"] == []

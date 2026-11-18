@@ -36,16 +36,16 @@ install is unchanged across the run (hashed before and after).
 | GEO TOC blocks | 29 across GEO1..8; ids 0..32 with **8, 11, 12, 19 absent**; no id repeats in the install |
 | `SAVGAMA.DAT` / `SAVGAMJ.DAT` | 13,137 bytes each; SHA-256 recorded, **not parsed** (no PoR save-format evidence in the repo) |
 
-### The GEO load routine (layout candidate)
+### Layout candidate for the GEO literal's owner (not a GEO load routine)
 
 The name literal for the GEO archive sits in `GAME.OVR` at file offset `0x2F994`, a
 Turbo Pascal length-prefixed piece `\x03GEO` followed by `\x04.dax`. The same run of
 bytes carries the error text "Unable to load geo in Load3DMap". Its layout owner, found
-by the probe, is the procedure whose final `retf` ends exactly at `0x2F994`:
+by the probe, is the procedure whose final `retf` ends exactly at `0x2F994`. That procedure is the WALLDEF wrapper (stub 6's entry), not the GEO routine. The literal is read by `mov di,0x109D` at `0x2F9E5`, inside the GEO fill at `0x2F9BE`. A layout candidate is not a use, and this probe does not check use sites:
 
 | Fact | Value |
 | --- | --- |
-| Owner entry | `GAME.OVR:0x2F6FF` (`push bp; mov bp,sp`), unique among prologues in a 0x2000-byte window |
+| Owner entry | `GAME.OVR:0x2F6FF` (`push bp; mov bp,sp`; the WALLDEF wrapper), unique among prologues in a 0x2000-byte window |
 | Return | `retf 4` at `0x2F991` (four argument bytes) |
 | Decoded length | 258 instructions, linear, no decode error |
 | Argument compares | `cmp [bp+6],1` at `0x2F706`, `cmp [bp+6],3` at `0x2F70C`, `cmp [bp+8],0` at `0x2F911`, `cmp [bp+8],0xA` at `0x2F958` |
@@ -83,7 +83,7 @@ rest do not. That was true only at the old walk bound of 800 instructions, which
 
 ### What this does and does not show
 
-- **Shows:** the GEO load routine's layout (owner, return width, two argument range
+- **Shows:** the layout of the owner procedure (the WALLDEF wrapper: owner, return width, two argument range
   compares), the pins, the 29-block TOC, and that no recognised overlay stub or decoded
   near call reaches it.
 - **Does not show:** how the arguments select a TOC block, which block or file is which
@@ -101,7 +101,7 @@ owner is the procedure at `GAME.OVR:0x2EEF4`, whose `retf 6` at `0x2F6A8` ends e
 the literal's block start. The owner is 827 instructions long, decodes linearly with no
 error, and is the only prologue in the 0x2000-byte window whose walk ends there. It is a
 layout candidate, labelled as one. Nothing in the probe shows that this procedure reads the
-`WALLDEF` literal, calls the GEO routine, or binds any wall art, and the probe does not
+`WALLDEF` literal, calls the GEO fill, or binds any wall art, and the probe does not
 decode what a WALLDEF file holds. Its argument compares and outgoing calls are not
 recorded here.
 
@@ -112,7 +112,7 @@ the `retf`, so the literal reported `no-layout-match`, and the JSON field
 0x2000 bytes, and each instruction is at least one byte, so such a walk never needs more
 than 0x2000 instructions. The bound therefore cannot hide a layout owner. On the retail
 install, no candidate walk in any literal's window reaches the bound: `truncated_walks` is
-0 for every literal. The GEO owner at `0x2F6FF` (258 instructions) is unchanged.
+0 for every literal. The owner at `0x2F6FF` (the WALLDEF wrapper, 258 instructions) is unchanged.
 
 ## External leads (not retail evidence)
 
@@ -147,7 +147,7 @@ check of the logs that exist, not a census of all runs.
 
 ## What would settle it
 
-1. **The GEO caller.** A capture or decode of the code that calls the routine at
+1. **Callers of the owner.** A capture or decode of the code that calls the procedure at
    `0x2F6FF`, with the argument values at each call. The probe found no `E8` near call
    and no stub export. A far call from another overlay needs its segment word resolved
    at load time, so a capture is the practical route.

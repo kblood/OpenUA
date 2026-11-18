@@ -30,7 +30,7 @@ needs_retail = pytest.mark.skipif(not HAVE_RETAIL, reason="pinned POOLRAD instal
 PROLOGUE = bytes.fromhex("55 89 e5")                       # push bp; mov bp,sp
 SHAPE = bytes.fromhex("b0 01 50" "8d 7e fb 16 57" "8d 7e fa 16 57")   # mov al,1; push ax; 2 far pointers (13 bytes)
 CALL_857 = bytes.fromhex("9a 5c 00 85 00")                 # call 0085:005C
-CALL_LOADER = bytes.fromhex("9a 16 07 02 08")              # call 0802:0716 (the GEO loader identity)
+CALL_LOADER = bytes.fromhex("9a 16 07 02 08")              # call 0802:0716 (the loader identity, START 0x876D)
 PUSH_AX = bytes.fromhex("50")
 PUSH_MEM = bytes.fromhex("ff 36 94 5d")                    # push word [0x5D94]: FF /6, not modelled by the existing Walk
 EXE_STUB = bytes(16)                                       # the copy-routine base is not used by synthetic windows
