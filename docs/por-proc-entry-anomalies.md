@@ -122,8 +122,11 @@ tools/.venv/Scripts/python.exe -I -m pytest tests/test_por_proc_entry_anomalies.
 
 ## Next discriminator
 
-1. **Decode the trailing byte.** Show what the `+4` byte means in accepted and malformed slots. Until then, the
-   scan's "malformed" rule is an unexplained classification, and its ten slots may be real entries.
+1. **Resolve the trailing byte at runtime.** The static probe in
+   [por-stub-tail-byte.md](por-stub-tail-byte.md) found ten nonzero tails, all at the last slot of
+   partial groups, but could not identify the byte's meaning. A decoded INT 3Fh handler with its
+   code segment recovered, or a live CS:IP capture of one such call, is still needed; the current
+   zero-only classification remains a scanner heuristic.
 2. **Test the `0x9807` slot under the census's candidate root.** A word of `0x880` would reach `0xA087`. That is a
    hypothesis to check against the two decoded call sites, not a fix.
 3. **Only a live capture** (CS:IP on `int 3Fh` at `0x50C`, or the loader's overlay table) can say whether the

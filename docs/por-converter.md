@@ -128,8 +128,11 @@ cross-checks only; none of them is used as a PoR fact.
   [`por-farcall-resolution.md`](por-farcall-resolution.md)). The shared scanner accepts
   only groups whose complete stub run is well-formed. It also lists heuristic partial
   candidates separately; group 29 (`fileofs 0x2E8F7`) is 7 of 8 at `+0x17`, with
-  malformed slot 7. Its valid slot 5 names the WALLDEF layout candidate, but no caller,
-  runtime target placement, or wall mapping is established.
+  slot 7 failing the scanner's zero-tail criterion. A separate static probe could not
+  determine whether nonzero tails are invalid, so that classification is not a proven
+  runtime format rule. Its slot 5 names the WALLDEF layout candidate, but no caller,
+  runtime target placement, or wall mapping is established. See
+  [`por-stub-tail-byte.md`](por-stub-tail-byte.md).
 - **WALLDEF render path** (`tools/por_wall_render_probe.py`, see
   [`por-wall-render-probe.md`](por-wall-render-probe.md)). All 38 retail WALLDEF blocks
   have raw sizes that are multiples of 780 (5 x 156), read from the TOC. No renderer

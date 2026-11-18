@@ -114,6 +114,10 @@ Each descriptor header is scored at header+`0x16` and header+`0x17`. The rules:
 - **Partial** (`status: partial`, in `partial_groups`, never in `groups`): at least 2 stubs and a strict
   majority are well-formed at one distance, and that distance beats the other. This threshold is a
   judgement, not a derived bound. A partial group is a candidate, not a verdict.
+- The current zero-only tail criterion is not validated as a VROOMM rule. A separate static probe
+  found ten nonzero tails, all on the last slot of partial groups, but could not determine whether
+  the byte is a field or invalid data; see [por-stub-tail-byte.md](por-stub-tail-byte.md). The
+  scanner classifications below describe the criterion it applies, not a proven runtime format.
 - A malformed slot is never a stub in either list. A call that lands on one is `malformed-stub`, with
   no target. A call on a well-formed slot of a partial group is `partial-stub-candidate`, with a
   diagnostic saying it is not a resolved target.
@@ -131,7 +135,7 @@ Each descriptor header is scored at header+`0x16` and header+`0x17`. The rules:
   calls `scan_groups` sees them. None of the handler's eleven far calls lands on them, so the
   classifications in the table above are unchanged. Whether they are real overlay descriptors is not
   established here.
-- **Partial** (10 rows):
+- **Partial under the scanner's zero-only tail criterion** (10 rows; tail semantics unresolved):
 
   | Header | fileofs | Stub delta | Well-formed | Malformed slot(s) |
   | ---: | ---: | --- | ---: | --- |
@@ -146,8 +150,10 @@ Each descriptor header is scored at header+`0x16` and header+`0x17`. The rules:
   | `0x3e28` | `0x2fb52` | `+0x17` | 6 of 7 | 1 |
   | `0x3e68` | `0x3073a` | `+0x17` | 19 of 20 | 1 |
 
-**The group at `0x2E8F7` (header `0x3DD7`).** Its stub run is at `0x3DEE`, at `+0x17`. Stubs 0–6 are
-well-formed, and stub 7 at `0x3E11` has trailer `0x27`, so it is malformed and is never a stub. Stub 5
+**The group at `0x2E8F7` (header `0x3DD7`).** Its stub run is at `0x3DEE`, at `+0x17`. Stubs 0–6 pass
+the scanner's zero-tail test; slot 7 at `0x3E11` has tail `0x27` and is classified malformed by that
+test. The tail probe does not establish that this byte invalidates the slot, so slot 7's status as a
+runtime stub remains open. Stub 5
 (file `0x3E07`) names proc `0x05FD`, which is file `0x2EEF4`, a Borland prologue. That is a partial
 entry candidate. No handler far call lands on file `0x3E07`, and no decoded in-group call reaches
 `0x2EEF4` (see [por-wall-group29-target-probe.md](por-wall-group29-target-probe.md)). **The stub does
@@ -166,8 +172,9 @@ not establish a caller, and it does not establish the WALLDEF wall mapping.**
   reach the parser stub. This is a structural statement, not a runtime one.
 - **What procs `0x1df0` and `0x1cc3` do**, or what opcode `0x37` does.
 - **That a partial group is one overlay, or that anything calls it.** The `0x2E8F7` partial's stub 5
-  is a candidate entry. Its stub 7 is malformed, and whether that slot belongs to the group at all is
-  open. The `+0x16` partials (`0x586` and others) are candidates on the same footing.
+  is a candidate entry. Slot 7 fails the scanner's zero-tail criterion, but the tail probe does not
+  decide whether the slot is invalid. The `+0x16` partials (`0x586` and others) are candidates on the
+  same footing.
 - **That the five new `+0x17` accepted groups are real descriptors.** They pass the same well-formed
   test as the `+0x16` groups, but they are small (2 to 6 stubs), and no retail call is tested against
   them beyond the eleven handler calls.
