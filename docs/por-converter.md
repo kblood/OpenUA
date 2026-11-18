@@ -770,7 +770,8 @@ The texture group S is the Gen1 slot used unchanged. That is **not verified**
 against PoR's WALLDEF art. Door flags 2 and 3 have distinct diagnostic labels
 (`locked`, status `supported-single-route`; `door3-unresolved`, status
 `provisional`). By default they emit the same byte; the opt-in passability-2
-candidate changes only flag-2 bytes. Per-rule provenance is in
+candidate changes only flag-2 bytes. In its tested route the edge stayed at
+passability 2 after crossing, so no opening was observed. Per-rule provenance is in
 `por_map.json` under `edge_mapping_evidence.rules`. Every rule keeps
 `geo_reader_binding: unproven` and `general_rule_proven: false`. The per-cell
 descriptor and zone bits are not written.

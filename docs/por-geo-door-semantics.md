@@ -294,12 +294,12 @@ GEO020.DAT in a disposable runtime copy. The GEO SHA-256
 the transposed fixture in the movement experiment above.
 
 At row 14, column 10, facing west, OpenUA read passability 2, logged menu pick
-index 0 as allowed, and moved to row 13, column 10. This confirms one
-pipeline-to-engine movement route for the opt-in byte. It does not verify the
-visible menu label, because the test read the action index rather than text.
-The diagnostic's post-action sample read a different, open cell, so this run
-does not establish persistence. The area/block join and general flag-2 mapping
-remain hypotheses. Details and exact run folder are in
+index 0 as allowed, and moved to row 13, column 10. A corrected follow-up
+diagnostic read the tested source edge after movement and still found
+passability 2: this route crossed without changing the edge in memory. It does
+not verify the visible menu label, because the test read the action index
+rather than text. The area/block join and general flag-2 mapping remain
+hypotheses. Details and exact run folder are in
 `por-door-flag2-candidate-runtime-20261118.md`.
 
 ## Evidence class 5: other-title hypothesis (NOT PoR evidence)

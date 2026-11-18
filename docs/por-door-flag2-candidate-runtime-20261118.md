@@ -48,16 +48,19 @@ post-menu readback is not a read of the selected edge: its diagnostic is
 hard-coded to `jt210(10,14,6)`, while the transposed party stands at
 `row=14,column=10`. That cell was already open (`0x00`) in the transposed
 fixture. The transposed run therefore verifies the allowed move and destination,
-but does not measure whether the selected edge changed. The converter now
+but does not measure whether the selected edge changed. The test-only logger
+has since been corrected to read `jt210(14,10,6)`, the tested source edge; the
+correction has not yet been exercised in a new runtime run. The converter now
 places source `(x,y)` at OpenUA `cell(col=y,row=x)` and writes the entry as
 `row=x, col=y`. This is evidence for one route; it does not validate all areas,
 events, transitions, or direction labels.
 
 The diagnostic also logs `DOOR forward edge=0` at the destination `(row=13,
-column=10)`, matching that cell's pristine fixture byte. It does not log the
-tested source edge after the menu. In the direct-placement run, the diagnostic
-does re-read its decision cell and reports passability 2 after the successful
-force action and move.
+column=10)`, matching that cell's pristine fixture byte. The corrected logger
+samples `(row=14,column=10,west)` on each subsequent forward decision. Until
+that sample is observed in a fresh run, persistence remains unverified. In the
+direct-placement run, the diagnostic re-read its decision cell and reported
+passability 2 after the successful force action and move.
 
 The final comparison is in ignored folders
 `data/work/por-flag2-candidate-20261118/run-cand-direct-final/` and
@@ -151,7 +154,29 @@ The bounded script reached the ready marker and logged the following route:
 The runtime therefore executes the exact pipeline-produced GEO and crosses the
 tested edge to the expected neighboring OpenUA cell. The visible menu label was
 not inspected, so “pick index 0” is not a screen-verified Bash label. The
-diagnostic's `DOOR stored edge` sample reads `(row=10,column=14,west)`, not the
-tested `(14,10,west)` edge; this run gives no post-action state or persistence
-result for the tested edge. The run is in the ignored
+diagnostic used during this run sampled `(row=10,column=14,west)`, not the
+tested `(14,10,west)` edge; this run gives no post-action state for the tested
+edge. The run is in the ignored
 `data/work/por-flag2-candidate-20261118/run-pipeline-transpose/` folder.
+
+### Corrected source-edge readback
+
+I corrected the compile-time `FRUA_DOOR_DIAG` logger to read
+`jt210(14,10,6)`, matching the tested source edge. A fresh bounded Hatari run
+used that binary in
+`data/work/por-flag2-candidate-20261118/run-pipeline-transpose-corrected/`.
+The binary SHA-256 was
+`2EF83CE48781C9BE9ACBC570465F086397933F6383D7029151A1F5B8D24518EF`. The
+pipeline-produced design inputs remained the same: GAME001.DAT
+`360B5F148B94E1BDCF2FD9C3F4ABBEBDE3E67296C3B737D45337AEC962E31717` and
+GEO020.DAT
+`B8C35F0F5F524CE077B78E517D0AB65809A966C2BC009444D68069E1DE191644`.
+
+The fresh log records edge 2 before the menu, action allowed 1, movement
+allowed 1, then a readback of the same `(14,10,west)` edge as 2 at the next
+forward decision from `(13,10)`. Thus this route crossed without changing the
+tested edge's in-memory passability; it did not open the edge. That is one
+bounded observation, not a general door-state rule or PoR parity result. The
+corrected readback also does not identify the visible menu label. The run
+compared the two design files before and after and found no changes; no Hatari
+process remained after exit.

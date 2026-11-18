@@ -108,6 +108,7 @@ def test_flag2_candidate_manifest_limits_runtime_claim_to_passability_two(tmp_pa
     assert tested["candidate"]["default"] is False
     assert tested["candidate"]["playable"] is False
     assert "single-route runtime-tested" in tested["candidate"]["status"]
+    assert "no opening was observed" in tested["candidate"]["status"]
     assert "persistent opening remain unproven" in tested["candidate"]["status"]
     assert tested["candidate"]["evidence_doc"] == "docs/por-door-flag2-candidate-runtime-20261118.md"
     door_line = next(x for x in tested["unsupported"] if x.startswith("Door mapping:"))

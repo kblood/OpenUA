@@ -124,6 +124,7 @@ def test_candidate_is_opt_in_via_cli(tmp_path, capsys):
     assert "OPT-IN FLAG-2 ENCODING" in report
     assert "single-route runtime-tested" in report
     assert "general flag-2 mapping" in report
+    assert "no opening was observed" in report
     assert "persistent opening remain unproven" in report
     assert "single-route runtime-tested" in norm["candidate"]["status"]
 

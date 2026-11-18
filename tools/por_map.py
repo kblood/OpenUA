@@ -296,8 +296,10 @@ CANDIDATE_FLAG2_PASSABILITY = 2
 
 def flag2_candidate_status(passability: int) -> str:
     if passability == CANDIDATE_FLAG2_PASSABILITY:
-        return ("single-route runtime-tested; general flag-2 mapping, GEO-reader "
-                "binding and persistent opening remain unproven; not default")
+        return ("single-route runtime-tested: action accepted and crossing allowed; "
+                "tested edge remained passability 2 after crossing, so no opening "
+                "was observed; general flag-2 mapping, GEO-reader binding and "
+                "persistent opening remain unproven; not default")
     return ("not runtime-tested; general flag-2 mapping, GEO-reader binding and "
             "persistent opening remain unproven; not default")
 

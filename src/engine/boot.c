@@ -52812,10 +52812,10 @@ static int play_forward_allowed(void)
 		g_event_modal_shown = 1;        /* a Blocked: menu ran */
 #ifdef FRUA_DOOR_DIAG
 	dbg_file_num("DOOR forward allowed=", (long)g_a5_byte(-22308));
-	/* Stored passability of the west edge of (14,10) (row 10, col 14, W=6),
+	/* Stored passability of the west edge of (14,10) (row 14, col 10, W=6),
 	 * read back on every forward decision so a later call shows whether the
 	 * decision persisted. */
-	dbg_file_num("DOOR stored edge 14,10 W=", (long)jt210((short)10, (short)14, (short)6));
+	dbg_file_num("DOOR stored edge 14,10 W=", (long)jt210((short)14, (short)10, (short)6));
 #endif
 	return g_a5_byte(-22308) != 0;
 }
