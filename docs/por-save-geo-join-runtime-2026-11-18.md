@@ -1,8 +1,8 @@
 # PoR SAVGAMA one-area design: bounded runtime check (2026-11-18)
 
-**Status: partial. Area-2 load reached; runtime position, first forward edge and move NOT established.**
-`playable: false`. `runtime_binding_claimed: false`. The save-to-area and block-to-area join,
-the start area and the facing remain hypotheses.
+**Status: partial. Area-2 load and OpenUA overland entry coordinates observed; first forward edge and move NOT established.**
+`playable: false`. `runtime_binding_claimed: false`. The DOS save-to-area and block-to-area join,
+the original game's start area and facing remain hypotheses.
 
 Plan: [`por-save-geo-join-plan.md`](por-save-geo-join-plan.md). Candidate check:
 [`por-save-geo-candidate-check.md`](por-save-geo-candidate-check.md). Prior door run:
@@ -20,10 +20,10 @@ party at row 15, column 4, and let a first forward key produce an observable edg
 | --- | --- |
 | Design from the default converter (no candidate flag) | Yes. One area-2 design; GEO002 emitted; flag 2 encoded as passability 15 (the default). |
 | Runtime loader reaches area 2 | **Yes.** `GEO-SWEEP area 002: width 16 height 16 cells 256` and the configured level is 002 from GAME001 byte 48. |
-| Party at row 15, column 4 (candidate transform) | **Not observed.** The walk never rendered in any run. The logged `restore ... party cell 0,0 facing 4` is the value captured before the sweep, not the entry cell. |
+| OpenUA overland entry coordinates | **Observed in attempt 8:** row 15, column 4 (`y*100+x = 1504`), facing byte 6 before the first logged command-dispatch return. This matches the candidate coordinates; it does not establish the DOS save-to-area or GEO block join. |
 | First forward edge / move | **Not measured.** No `DOOR forward` line was logged in any run; no forward decision was reached. |
 
-Nothing in this run confirms the candidate join, the facing, or the start position.
+The OpenUA coordinate observation does not confirm that the original game used this area/block join or that a forward command moves correctly.
 
 ## Run identity
 
@@ -72,7 +72,8 @@ that sends SIGINT only to the Hatari PID it started, and a 60 s wait after the r
 
 ## Attempts
 
-Every attempt started from the same runtime folder. A new `evidence*` folder was kept for each.
+Attempts 1–5 used the runtime described above; attempts 6–8 used fresh disposable copies.
+A new `evidence*` folder was kept for each.
 
 | Attempt | Folder | Keys sent after the marker | Result |
 | --- | --- | --- | --- |
@@ -81,9 +82,13 @@ Every attempt started from the same runtime folder. A new `evidence*` folder was
 | 3 | `evidence-attempt3-return-no-walk/` | one Return (28) at +60 s, no forward key | No walk render (`dbg_dump_view` not written within 40 s). No forward key was sent. |
 | 4 | `evidence/` (final) | none (diagnostic) | Screenshot of the pre-walk screen (first try: `Screen dump failed!` because `runtime-savgama/shots/` did not exist). |
 | 5 | `evidence-attempt5-updoor-sequence/` | **Up (72), Return (28), Up (72)**, after the ready marker; see [Attempt 5](#attempt-5-up-return-up-2026-11-18) | No walk render (`dbg_dump_view` not written within 40 s after the last key), no `DOOR` line. Quit at +66 s after the marker. |
+| 6 | `evidence-attempt6-overland-cells/` | **Up (72), Return (28), Up (72)** | Overland image appeared; no `OVSTEP`. This run had no live coordinate instrumentation. |
+| 7 | `evidence-attempt7-overland-extra-up/` | Same sequence, then one extra Up (72) | Overland image remained; no `OVSTEP`. No live coordinate instrumentation. |
+| 8 | `evidence-attempt8-overland-extra-up/` | Same sequence and extra Up, with `FRUA_CELLSCAN` position markers | Entry position/facing and later snapshots recorded below. No `OVSTEP`; no successful movement observed. |
 
-The earlier flag-2 door run sent Up, Return and Up, and it reached the walk. Here the first
-Up produced no walk render, and so did Return on its own. Hatari's screenshot shows the
+The earlier flag-2 door run sent Up, Return and Up, and it reached the dungeon walk. In attempts
+2–5 here, the first Up produced no walk render, and neither did Return on its own. That walk
+marker is dungeon-specific, so its absence did not assess the level-2 overland loop. Hatari's screenshot shows the
 pre-walk screen: a scene picture above an empty text panel (what the game is waiting for is not identified). Which key advances that screen was
 not determined within the key budget. Up is the same scan code as the forward key, so it could
 not be used for that purpose here. A mouse event (Hatari exposes `hatari-event` clicks) was not
@@ -115,6 +120,46 @@ The Hatari log has a `Bus Error reading at address $ffffa200, PC=$e00d98` warnin
 every run of this design, including attempts 2 to 5, so it is not new here. It was not
 classified, and the earlier "only benign warnings" statement above is revised: this warning is
 recurring and unclassified.
+
+### Attempts 6–8: overland path and live coordinate trace (2026-11-18)
+
+Source inspection showed that level 2 dispatches through the overland path in `jt948`; the
+earlier `dbg_dump_view`/dungeon `DOOR` markers were therefore not a valid movement test for this
+design. Attempts 6 and 7 repeated the known key sequence against fresh copies and reached the
+overland scene, but produced no `OVSTEP`. Attempt 8 used a disposable build with extra
+`FRUA_CELLSCAN` logs around the overland dispatcher. The instrumentation was added only to the
+ignored build copy under `data/work`; tracked source was not changed for this run.
+
+Attempt 8 emitted these values in order:
+
+| Snapshot | Level | Mode | Position (`y*100+x`) | Facing byte | `jt953` result |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Before first logged dispatch | 2 | 3 | 1504 (row 15, column 4) | 6 | — |
+| After first dispatch | 2 | 3 | 1504 | 0 | -120 |
+| After second dispatch | 2 | 3 | 1504 | 0 | -120 |
+| After third dispatch | 2 | 3 | 1504 | 0 | -120 |
+| Fourth dispatch entry before quit | 2 | 3 | 1504 | 0 | no return logged |
+
+The scheduled input during these snapshots was Up (scan 72), Return (28), Up (72), followed
+by one extra Up. The first observed facing change is temporally consistent with the first Up;
+the log does not tag a particular input at the state write, so this remains a correlation.
+Coordinates remained 1504 in every recorded snapshot. `OVSTEP` did not appear. The fourth
+dispatch had a pre-state record but no post-state record before the process was quit, so the
+extra Up has no completed post-input measurement. These observations establish the OpenUA
+entry coordinates for this fixture and that the tested sequence did not produce a logged
+landing; they do not establish DOS behavior or the original game's facing convention.
+
+Attempt 8 run identity: Hatari PID 1200, script exited rc 0; the attempt script's 240 s watchdog
+was armed and did not fire. The instrumented `frua.prg` SHA-256 was
+`667C0FB0BF25FA6B9626B3B0591B12DA04E3DF457E428C47EEA1E5359FCD333D`. The initial screenshot
+(`grab0001.png`) is SHA-256 `AFECCFEE9ABA4A450974A4B488073B370DA22E163CA53D5A8D10EDADAD08C814`;
+the screenshot after the initial sequence (`grab0003.png`) and the final screenshot
+(`grab0004.png`) are both `96F2F3AD4A34AC81FBF5CB26409963C6F0945F31D44027F5927F9AB7C40BC1D8`.
+The Hatari log again reports the unclassified bus error at `$ffffa200`.
+
+The attempt-8 copy's `GAME001.DAT`, `GEO002.DAT` and `start.dat` hashes were identical to the
+source runtime both before launch and after exit: `5CBF1C30…FE085F`, `C863D2A8…B7DA40` and
+`8B3C441B…3E7652`, respectively. The copied `frua.prg` hash was `667C0FB0…CD333D`.
 
 ## Relevant log lines (final run, `evidence/DBG.LOG`)
 
@@ -165,14 +210,17 @@ belonged to this session.
   stays in the binary for any later door run.
 - The area-2 result is loader-reach only: the sweep loads whichever `GEO*.DAT` is present in the
   design and reports its dimensions. It does not show the DOS block binding or the area join.
-- Facing (west, from the unverified candidate mapping) and the start area are hypotheses.
+- The original game's facing (west, from the unverified candidate mapping) and start area are
+  hypotheses.
+- Attempt 8 observed OpenUA's entry coordinates `(15,4)` and facing byte `6`; it did not compare
+  the original game's live state or prove that the candidate join is authentic.
 - Flag 2 is encoded as passability 15 (the default). The flag-2 candidate option was not used.
 - One design, one binary, one screen. No second route was checked.
 
 ## Next step (needs a decision)
 
-Up, Return and Up together did not enter the walk (attempt 5), and Return alone did not either.
-Up is the forward scan code. A follow-up needs one of: (a) an approved non-forward input that
-advances the title panel (e.g. a Hatari mouse click), or (b) an explanation of why the flag-2
-design walked and this one does not (e.g. a compare of the two `GEO002.DAT` designs and their
-start records). Until then this check stops at area-2 load. No further key sequences were sent.
+The overland trace confirms the candidate coordinates as the live OpenUA entry coordinates,
+but the input sequence did not produce `OVSTEP`, and the fourth dispatcher call was still
+waiting when the run ended. Next, identify `jt953`'s input-to-command mapping and log the
+selected command/result so a valid overland move can be tested without inferring from screen
+changes. Any parity claim will still need a corresponding observation from the original game.
