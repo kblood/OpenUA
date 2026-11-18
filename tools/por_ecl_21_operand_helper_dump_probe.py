@@ -45,8 +45,22 @@ HELPER_LINEAR = 0x40DF6
 HELPER_FILE = 0x7609
 HELPER_END = 0x7689
 HELPER_LEN = HELPER_END - HELPER_FILE
-HELPER_RET = bytes.fromhex("ca 02 00")
+PARSER_FILE = 0x74D3
+PARSER_LEN = HELPER_FILE - PARSER_FILE
+PARSER_END = HELPER_FILE
+PARSER_LINEAR = 0x40CC0
+PARSER_SHA256 = "750610f1ea8c924651ee615595556377352cf441f3fd7e27a01c79ed3f6259cd"
+MENU_CALLS = {
+    0x1C6B: (0x2A, "0x15-first"), 0x1C98: (0x25, "0x15-getter"),
+    0x1CA8: (0x2A, "0x15-second"), 0x1E29: (0x2A, "0x2b-first"),
+    0x1E41: (0x25, "0x2b-getter"), 0x1E51: (0x2A, "0x2b-second"),
+}
+PARSER_THUNK_LINEAR = 0x1893A
+PARSER_THUNK = bytes.fromhex("ea 00 00 cc 40")
+PARSER_TARGET_LINEAR = PARSER_LINEAR
+MENU_LIVE_SEG = 0x1891
 HELPER_ARRAYS = (0x7085, 0x7045, 0x7005)
+HELPER_RET = bytes.fromhex("ca 02 00")
 HELPER_EXPECTED_SHA256 = "0dd25983c54922e1ebe6f9f1b693f32c6a1c2b69199ddf110fc7d040134ec42b"
 KNOWN_DUMPS = {
     "f8191750ea6c672ecf649eac86d6dc3efa15766bb50f73ad6f2f68f27dea4895": "por-live-memory-pid34644",
@@ -62,6 +76,30 @@ def u16(b: bytes, at: int) -> int:
     return struct.unpack_from("<H", b, at)[0]
 
 
+def _near_closure(data: bytes, entry: int) -> tuple[list[dict], bool]:
+    """Walk direct near callees only; unresolved far and indirect edges fail closed."""
+    pending, seen, rows = [entry], set(), []
+    complete = True
+    while pending:
+        start = pending.pop(0)
+        if start in seen:
+            continue
+        seen.add(start)
+        walk = dec.walk(data, start)
+        direct_cursor = 0x49ED in walk["direct_refs"]
+        rows.append({"entry": start, "complete": walk["complete"],
+                     "instruction_count": walk["instruction_count"],
+                     "direct_absolute_cursor_reference": direct_cursor,
+                     "far_calls": walk["far_calls"], "indirect": walk["indirect"],
+                     "incomplete": walk["incomplete"],
+                     "near_calls": walk["near_calls"]})
+        if not walk["complete"] or walk["far_calls"] or walk["indirect"] or direct_cursor:
+            complete = False
+        pending.extend(c["target"] for c in walk["near_calls"] if c["target"] not in seen)
+    rows.sort(key=lambda row: row["entry"])
+    return rows, complete
+
+
 def analyze(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes]], *, pins: dict = pogm.PINS) -> dict:
     pogm.check_pin("GAME.OVR", ovr, pins)
     pogm.check_pin("START.EXE", exe, pins)
@@ -74,6 +112,19 @@ def analyze(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes]], *, pins: dic
     helper_bytes = ovr[HELPER_FILE:HELPER_END]
     helper_complete = (decode_error is None and helper and helper[-1].off + helper[-1].length == HELPER_END
                        and helper[-1].flow == "retf" and helper[-1].imm == 2)
+    parser_walk = dec.walk(ovr, PARSER_FILE)
+    parser_end = max((i["at"] + len(bytes.fromhex(i["bytes"])) for i in parser_walk["listing"]), default=-1)
+    parser_complete = (parser_walk["complete"] and parser_end == PARSER_END and parser_walk["returns"] ==
+                       [{"at": PARSER_END - 3, "kind": "retf", "imm": 2}])
+    helper_closure, helper_closure_ok = _near_closure(ovr, HELPER_FILE)
+    menu_file_checks = {
+        label + "_call_bytes": ovr[at:at + 5] == bytes((0x9A, operand, 0, 0x2B, 0))
+        for at, (operand, label) in MENU_CALLS.items()
+    }
+    menu_fixup_checks = {
+        label + "_segment_fixup_listed": at - group["fileofs"] + 3 in fixups
+        for at, (_, label) in MENU_CALLS.items()
+    }
     file_checks = {
         "handler_group_file_offset": group["fileofs"] == GROUP_FILE,
         "handler_call_is_002b_0025": ovr[HANDLER_CALL:HANDLER_CALL + 5] == bytes.fromhex("9a 25 00 2b 00"),
@@ -87,6 +138,12 @@ def analyze(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes]], *, pins: dic
             for lo, hi in [(addr & 0xFF, addr >> 8)]),
         "helper_returns_retf2": helper_bytes[-3:] == HELPER_RET,
         "helper_body_sha256": hashlib.sha256(helper_bytes).hexdigest() == HELPER_EXPECTED_SHA256,
+        "parser_decode_complete_to_retf2": bool(parser_complete),
+        "parser_is_adjacent_to_helper": PARSER_END == HELPER_FILE,
+        "parser_body_sha256": hashlib.sha256(ovr[PARSER_FILE:PARSER_END]).hexdigest() == PARSER_SHA256,
+        "helper_near_closure_complete_without_direct_cursor_reference": helper_closure_ok,
+        **menu_file_checks,
+        **menu_fixup_checks,
     }
     rows = []
     for label, raw in dumps:
@@ -106,6 +163,24 @@ def analyze(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes]], *, pins: dic
             helper_target = u16(thunk, 3) * 16 + u16(thunk, 1) if thunk[:1] == b"\xEA" else -1
             helper_in_dump = helper_target >= 0 and dump.covers(helper_target, HELPER_LEN)
             live_helper = dump.read(helper_target, HELPER_LEN) if helper_in_dump else b""
+            parser_thunk = dump.read(PARSER_THUNK_LINEAR, 5) if dump.covers(PARSER_THUNK_LINEAR, 5) else b""
+            parser_in_dump = dump.covers(PARSER_LINEAR, PARSER_LEN)
+            live_parser = dump.read(PARSER_LINEAR, PARSER_LEN) if parser_in_dump else b""
+            menu_sites = []
+            for call_at, (operand, label) in MENU_CALLS.items():
+                site_linear = gmap["base_linear"] + (call_at - group["fileofs"])
+                call = dump.read(site_linear, 5)
+                seg = u16(call, 3)
+                target_linear = seg * 16 + u16(call, 1)
+                thunk_bytes = dump.read(target_linear, 5) if dump.covers(target_linear, 5) else b""
+                expected_thunk = PARSER_THUNK if operand == 0x2A else THUNK
+                expected_target = PARSER_THUNK_LINEAR if operand == 0x2A else THUNK_LINEAR
+                menu_sites.append({"label": label, "game_offset": call_at, "linear": site_linear,
+                                   "bytes": call.hex(" "), "target_linear": target_linear,
+                                   "thunk_bytes": thunk_bytes.hex(" "),
+                                   "matches_expected": call[:3] == bytes((0x9A, operand, 0))
+                                       and seg == MENU_LIVE_SEG and target_linear == expected_target
+                                       and thunk_bytes == expected_thunk})
             checks.update({
                 "group_unique_at_expected_base": True,
                 "mapped_call_bytes_match_far_call": call_bytes[:3] == bytes.fromhex("9a 25 00"),
@@ -116,6 +191,15 @@ def analyze(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes]], *, pins: dic
                 "destination_matches_complete_helper": helper_in_dump and live_helper == helper_bytes,
                 "helper_bytes_match_unique_pinned_game_offset": live_helper == ovr[HELPER_FILE:HELPER_END]
                     and helper_in_dump and ovr.count(helper_bytes) == 1,
+                "menu_2b_calls_map_to_expected_thunks": all(site["matches_expected"] for site in menu_sites),
+                "parser_thunk_is_far_jmp": parser_thunk == PARSER_THUNK,
+                "parser_thunk_destination_is_40cc_0000":
+                    (u16(parser_thunk, 3) * 16 + u16(parser_thunk, 1) == PARSER_TARGET_LINEAR)
+                    if parser_thunk[:1] == b"\xEA" else False,
+                "parser_memory_matches_complete_game_body":
+                    parser_in_dump and live_parser == ovr[PARSER_FILE:PARSER_END],
+                "parser_body_match_unique_in_game": parser_in_dump and live_parser == ovr[PARSER_FILE:PARSER_END]
+                    and ovr.count(ovr[PARSER_FILE:PARSER_END]) == 1,
             })
             row["call"] = {"linear": call_linear, "bytes": call_bytes.hex(" "), "live_segment": seg_live,
                            "target_linear": target}
@@ -123,6 +207,10 @@ def analyze(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes]], *, pins: dic
             row["helper"] = {"linear": helper_target, "game_offset": HELPER_FILE,
                              "length": HELPER_LEN, "bytes_sha256": hashlib.sha256(live_helper).hexdigest(),
                              "bytes_match_game": helper_in_dump and live_helper == helper_bytes}
+            row["menu_calls"] = menu_sites
+            row["parser"] = {"linear": PARSER_LINEAR, "game_offset": PARSER_FILE,
+                             "length": PARSER_LEN, "sha256": hashlib.sha256(live_parser).hexdigest(),
+                             "bytes_match_game": parser_in_dump and live_parser == ovr[PARSER_FILE:PARSER_END]}
         else:
             checks["group_unique_at_expected_base"] = False
         row["status"] = "ok" if all(checks.values()) else "diagnostic"
@@ -140,9 +228,17 @@ def analyze(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes]], *, pins: dic
                                  "ret": {"at": helper[-1].off, "kind": helper[-1].flow, "imm": helper[-1].imm},
                                  "bp_displacements": sorted({i.bp_disp for i in helper if i.bp_disp is not None}),
                                  "indexed_array_displacements": list(HELPER_ARRAYS),
-                                 "sha256": hashlib.sha256(helper_bytes).hexdigest()}},
+                                 "sha256": hashlib.sha256(helper_bytes).hexdigest()},
+                      "parser": {"entry": PARSER_FILE, "end": PARSER_END, "length": PARSER_LEN,
+                                 "sha256": hashlib.sha256(ovr[PARSER_FILE:PARSER_END]).hexdigest(),
+                                 "decode_complete": bool(parser_complete)},
+                      "menu_calls": [{"game_offset": at, "operand": operand, "label": label}
+                                     for at, (operand, label) in MENU_CALLS.items()],
+                      "helper_near_closure": helper_closure},
         "dumps": rows,
-        "not_established": ["that the handler or helper executed", "the meaning of the three DGROUP arrays or returned AL",
+        "not_established": ["that the handler, menu handlers, parser, or getter executed",
+                            "the meaning of the three DGROUP arrays or returned AL",
+                            "whether any indirect memory write changes the ECL cursor",
                             "that any returned byte is an ECL stream byte or GEO block id",
                             "register state, argument values, dump capture instant, and atomicity"],
     }

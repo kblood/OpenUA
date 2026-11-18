@@ -1,8 +1,10 @@
 # PoR ECL 0x21 operand-helper dump chain
 
 **Status: memory-byte chain cross-check only. `playable: false`.** This probe follows the `002B:0025`
-far call in the PoR opcode-0x21 handler through the bytes in two existing RAM dumps. It does not show
-that the handler or helper executed.
+far call in the PoR opcode-0x21 handler through the bytes in two existing RAM dumps. It also
+cross-checks the `002B:002A` and `002B:0025` call sites in the `0x15` and `0x2B` menu handlers, and
+records the helper's bounded direct near-call closure. It does not show that any handler or helper
+executed.
 
 ## Finding
 
@@ -24,6 +26,29 @@ locals `[bp-3]`, `[bp-2]`, then `[bp-1]`. It later pushes the first result as a 
 `03D5:0043` call. The first helper result therefore reaches that later call as an argument candidate.
 This does not establish that the result is an ECL stream byte or a GEO block id.
 
+## Menu-call cross-check
+
+The six `002B:002A`/`002B:0025` sites in the `0x15` and `0x2B` handlers are in the same overlay group
+as the opcode-0x21 call above. In both dumps, all six live segment words are `0x1891`; the `002A`
+calls reach the thunk at linear `0x1893A` (`EA 00 00 CC 40`), and the `0025` calls reach `0x18935`
+(`EA 36 01 CC 40`). The first thunk jumps to `40CC:0000`, linear `0x40CC0`; its complete 310-byte
+body is byte-identical to `GAME.OVR:0x74D3..0x7608`. The second jumps to `40CC:0136`, linear `0x40DF6`,
+where the complete 128-byte helper matches `GAME.OVR:0x7609..0x7688`. The parser and helper are
+adjacent in the pinned file.
+
+This cross-check identifies the two menu call targets in these memory images. It is stronger than the
+earlier zero-skew guess, but remains a memory-byte match at unknown capture instants, not a register
+trace or proof that the menu handlers ran. The parser at `0x74D3` is the procedure previously decoded
+with an element-count argument at `[bp+6]`; the menu call sites push literal 3 for `0x15` and 2 for
+`0x2B` before calling it.
+
+The lookup helper at `0x7609` and its direct near-call closure contain six complete procedures
+(`0x7609`, `0x82DF`, `0x7B82`, `0x7BCE`, `0x7C8F`, `0x7C29`; 494 instructions total). The decoder
+reports no far or indirect calls and no direct absolute reference to `[0x49ED]` in this bounded
+closure. That does **not** prove the helper's net cursor effect: indirect memory effects are not ruled
+out. The menu handlers' explicit `dec [0x49ED]` remains a separate byte fact, and the total stream
+advance through their combined helper sequence is not established.
+
 ## Results
 
 | Check | Both dumps |
@@ -35,6 +60,9 @@ This does not establish that the result is an ECL stream byte or a GEO block id.
 | Destination body | exact `0x80`-byte match to GAME.OVR `0x7609` |
 | Body end | `0x7689`, final instruction `retf 2` at `0x7686` |
 | Body SHA-256 | `0dd25983c54922e1ebe6f9f1b693f32c6a1c2b69199ddf110fc7d040134ec42b` |
+| Menu call sites | all six `0x15`/`0x2B` calls map to live `002A` parser and `0025` helper thunks in both dumps |
+| Parser body | 310-byte exact match to GAME.OVR `0x74D3..0x7608` |
+| Helper near closure | 6 complete procedures, 494 instructions, no far/indirect calls or direct absolute `[0x49ED]` reference |
 
 The tool's output is written under `data/work/por-ecl-21-operand-helper-dump-probe/` and contains
 addresses, matched bytes, hashes and checks only.
@@ -46,13 +74,14 @@ unique group mapping; the observed live call operand; the far-jump bytes at its 
 memory-body match to the complete pinned procedure. This is memory content at two unknown capture
 instants, not a register trace or execution trace.
 
-Not established: that the call ran; the values in the DS arrays; the behavior of the helper callees;
+Not established: that any call ran; the values in the DS arrays; indirect memory effects on the cursor;
 which result branch ran; what returned AL represents; the relationship of that value to an ECL stream,
 GEO archive, block or area; and any gameplay behavior.
 
 ## Verification
 
 `tests/test_por_ecl_21_operand_helper_dump_probe.py` includes synthetic falsifiers for the static call,
-fixup entry, live segment, thunk, destination body and pinned helper body, plus a retail-gated check
-against the two local dumps. The procedure bytes are decoded using the repository's 8086 decoder. No
-emulator, DOSBox, GameLink, codewheel, or GoldBox data is used.
+fixup entries, all six menu call sites, the live segment, both thunks, parser/helper bodies, and a direct
+absolute cursor reference in the helper closure, plus a retail-gated check against the two local dumps.
+The procedure bytes are decoded using the repository's 8086 decoder. No emulator, DOSBox, GameLink,
+codewheel, or GoldBox data is used.

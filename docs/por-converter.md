@@ -106,9 +106,11 @@ cross-checks only; none of them is used as a PoR fact.
 - **ECL menu framing (0x15/0x2B)** (`tools/por_ecl_menu_framing_probe.py`, see
   [`por-ecl-menu-framing-probe.md`](por-ecl-menu-framing-probe.md)). The pinned
   classifier defaults both opcodes to a one-byte advance with zero classifier-parsed
-  operands. Their handlers also push 3 and 2 to far helpers `2B:2A` and `2B:25`,
-  whose targets and stream advances remain unresolved. These facts do not yet define
-  the menu framing or assign opcode semantics.
+  operands. In two RAM dumps, all six `2B:2A`/`2B:25` menu call sites map to the
+  parser at `GAME.OVR:0x74D3` and the adjacent lookup helper at `0x7609`; the handlers
+  pass parser counts 3 and 2. The helper's direct near-call closure has no direct
+  absolute `[0x49ED]` reference, but indirect cursor effects and execution are not
+  established. The complete menu framing and opcode semantics remain unresolved.
 - **ECL opcode 0x21 dispatch** (`tools/por_ecl_21_dispatch_probe.py`, see
   [`por-ecl-21-dispatch-probe.md`](por-ecl-21-dispatch-probe.md)). The dispatcher
   arm has a direct `E8` edge to handler `0x19BA`, which makes eleven far calls.
@@ -133,9 +135,11 @@ cross-checks only; none of them is used as a PoR fact.
   see [`por-ecl-21-operand-helper-dump-probe.md`](por-ecl-21-operand-helper-dump-probe.md)).
   In both dumps, the handler's live `002B:0025` operand points to a far-jump thunk,
   which leads to a complete 128-byte body matching `GAME.OVR:0x7609` through its
-  `retf 2`. The helper reads three indexed DS arrays and has tag-dependent paths, but
-  the array contents, returned byte's meaning, and execution are unestablished. This
-  identifies memory bytes; it does not close ECL framing or opcode semantics.
+  `retf 2`. The corresponding `002B:002A` calls at the `0x15`/`0x2B` menu handlers
+  map to the adjacent parser body at `0x74D3`. The getter reads three indexed DS
+  arrays and has tag-dependent paths, but the array contents, returned byte's meaning,
+  indirect cursor effects, and execution remain unestablished. This is memory-byte
+  evidence, not a complete ECL framing or opcode-semantic result.
 - **ECL dispatcher cursor (`0x1B`)** (`tools/por_ecl_handler_cursor_probe.py`, see
   [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md)). The handler
   increments the cursor once before branching, but one path calls unresolved

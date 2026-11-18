@@ -22,6 +22,16 @@ BODY = bytes.fromhex(
     "8a 46 f6 30 e4 b1 08 d3 e0 03 c2 50 0e e8 7b 0c 89 46 fe "
     "eb 17 3c 02 74 04 3c 81 75 0f 8a 46 f7 50 8a 46 f6 50 0e "
     "e8 05 05 89 46 fe 8b 46 fe 89 ec 5d ca 02 00")
+PARSER_BODY = bytes.fromhex(
+    "55 89 e5 83 ec 08 c6 46 fe 00 8a 46 06 88 46 f9 b0 01 3a 46 f9 76 03 e9 12 01 88 46 ff eb 03 fe 46 ff "
+    "a1 ed 49 40 c4 3e de 49 03 f8 26 8a 95 00 67 8a 46 ff 30 e4 8b f8 88 95 05 70 a1 ed 49 40 40 c4 3e de 49 "
+    "03 f8 26 8a 95 00 67 8a 46 ff 30 e4 8b f8 88 95 85 70 a1 ed 49 40 40 a3 ed 49 8a 46 ff 30 e4 8b f8 8a 85 "
+    "05 70 3c 01 74 08 3c 02 74 04 3c 03 75 20 ff 06 ed 49 a1 ed 49 c4 3e de 49 03 f8 26 8a 95 00 67 8a 46 ff "
+    "30 e4 8b f8 88 95 45 70 e9 8b 00 3c 80 75 39 fe 46 fe 8a 46 ff 30 e4 8b f8 8a 85 85 70 30 e4 89 46 fa 83 "
+    "7e fa 00 76 0e 8a 46 fa 50 8a 46 fe 50 0e e8 94 10 eb 10 8a 46 fe 30 e4 8b f8 b1 08 d3 e7 c6 85 c8 6f 00 "
+    "eb 4e 3c 81 75 4a fe 46 fe ff 06 ed 49 a1 ed 49 c4 3e de 49 03 f8 26 8a 95 00 67 8a 46 ff 30 e4 8b f8 "
+    "88 95 45 70 8a 46 ff 30 e4 8b f8 8a 85 85 70 50 8a 46 ff 30 e4 8b f8 8a 85 45 70 50 0e e8 9c 05 89 46 fc "
+    "8a 46 fe 50 ff 76 fc 0e e8 da 11 8a 46 ff 3a 46 f9 74 03 e9 f3 fe ff 06 ed 49 89 ec 5d ca 02 00")
 
 
 def _descriptor(exe, off, fileofs, codesz, fixupsz, jmpcnt=0):
@@ -30,18 +40,31 @@ def _descriptor(exe, off, fileofs, codesz, fixupsz, jmpcnt=0):
 
 
 def fixture():
-    ovr = bytearray((i * 37 + 11) & 255 for i in range(0x8000))
+    ovr = bytearray((i * 37 + 11) & 255 for i in range(0x9000))
     exe = bytearray((i * 19 + 7) & 255 for i in range(0x1000))
-    codesz, body = 0xD00, p.HANDLER_CALL - p.GROUP_FILE
-    _descriptor(exe, p.GROUP_DESC, p.GROUP_FILE, codesz, 2)
+    codesz, body = 0x350D, p.HANDLER_CALL - p.GROUP_FILE
+    fixups = [body + 3] + [at - p.GROUP_FILE + 3 for at in p.MENU_CALLS]
+    _descriptor(exe, p.GROUP_DESC, p.GROUP_FILE, codesz, len(fixups) * 2)
     code = memoryview(ovr)[p.GROUP_FILE:p.GROUP_FILE + codesz]
     code[body:body + 5] = bytes.fromhex("9a 25 00 2b 00")
-    struct.pack_into("<H", ovr, p.GROUP_FILE + codesz, body + 3)
+    for at, (operand, _) in p.MENU_CALLS.items():
+        code[at - p.GROUP_FILE:at - p.GROUP_FILE + 5] = bytes((0x9A, operand, 0, 0x2B, 0))
+    for i, fixup in enumerate(sorted(fixups)):
+        struct.pack_into("<H", ovr, p.GROUP_FILE + codesz + i * 2, fixup)
     ovr[p.HELPER_FILE:p.HELPER_END] = BODY
+    ovr[p.PARSER_FILE:p.PARSER_END] = PARSER_BODY
+    # Minimal far-returning stand-ins for the helper's near-call targets. The
+    # retail-specific complete closure is exercised by the gated test.
+    for target in (0x82DF, 0x7B82, 0x7BCE, 0x7C8F, 0x7C29):
+        ovr[target:target + 3] = bytes.fromhex("ca 02 00")
 
     dump = bytearray(0x100000)
     dump[p.GROUP_BASE:p.GROUP_BASE + codesz] = code
     struct.pack_into("<H", dump, p.GROUP_BASE + body + 3, p.LIVE_SEG)
+    for at in p.MENU_CALLS:
+        struct.pack_into("<H", dump, p.GROUP_BASE + at - p.GROUP_FILE + 3, p.MENU_LIVE_SEG)
+    dump[p.PARSER_THUNK_LINEAR:p.PARSER_THUNK_LINEAR + 5] = p.PARSER_THUNK
+    dump[p.PARSER_LINEAR:p.PARSER_LINEAR + len(PARSER_BODY)] = PARSER_BODY
     dump[p.THUNK_LINEAR:p.THUNK_LINEAR + 5] = p.THUNK
     dump[p.HELPER_LINEAR:p.HELPER_LINEAR + len(BODY)] = BODY
     pins = {"GAME.OVR": {"size": len(ovr), "sha256": hashlib.sha256(ovr).hexdigest()},
@@ -64,7 +87,7 @@ def test_complete_synthetic_dump_chain_passes():
     assert row["helper"]["bytes_match_game"] is True
 
 
-@pytest.mark.parametrize("offset,value", [(p.HANDLER_CALL, 0xE8), (p.GROUP_FILE + 0xD00, 0x00)])
+@pytest.mark.parametrize("offset,value", [(p.HANDLER_CALL, 0xE8), (p.GROUP_FILE + 0x350D, 0x00)])
 def test_bad_call_or_fixup_table_is_diagnostic(offset, value):
     ovr, exe, dump, pins = fixture()
     changed = bytearray(ovr)
@@ -105,6 +128,52 @@ def test_wrong_file_helper_body_breaks_static_check():
     assert check(bytes(changed), exe, dump, pins)["file_side"]["checks"]["helper_body_sha256"] is False
 
 
+@pytest.mark.parametrize("call_at", list(p.MENU_CALLS))
+def test_menu_call_site_mutation_is_diagnostic(call_at):
+    ovr, exe, dump, pins = fixture()
+    changed = bytearray(ovr)
+    changed[call_at + 1] ^= 1
+    pins = {"GAME.OVR": {"size": len(changed), "sha256": hashlib.sha256(changed).hexdigest()},
+            "START.EXE": pins["START.EXE"]}
+    result = check(bytes(changed), exe, dump, pins)
+    assert result["file_side"]["checks"][p.MENU_CALLS[call_at][1] + "_call_bytes"] is False
+
+
+def test_helper_near_closure_fails_on_direct_cursor_operand():
+    ovr, exe, dump, pins = fixture()
+    changed = bytearray(ovr)
+    changed[p.HELPER_FILE:p.HELPER_FILE + 3] = bytes.fromhex("a1 ed 49")
+    pins = {"GAME.OVR": {"size": len(changed), "sha256": hashlib.sha256(changed).hexdigest()},
+            "START.EXE": pins["START.EXE"]}
+    result = check(bytes(changed), exe, dump, pins)
+    assert result["file_side"]["checks"][
+        "helper_near_closure_complete_without_direct_cursor_reference"] is False
+
+
+def test_menu_call_without_listed_segment_fixup_is_diagnostic():
+    ovr, exe, dump, pins = fixture()
+    changed = bytearray(ovr)
+    fixup_table = p.GROUP_FILE + 0x350D
+    # Keep the table sorted and its declared size; replace one menu segment-word offset.
+    struct.pack_into("<H", changed, fixup_table + 2, 0x1C6B - p.GROUP_FILE + 4)
+    pins = {"GAME.OVR": {"size": len(changed), "sha256": hashlib.sha256(changed).hexdigest()},
+            "START.EXE": pins["START.EXE"]}
+    result = check(bytes(changed), exe, dump, pins)
+    assert result["file_side"]["checks"]["0x15-first_segment_fixup_listed"] is False
+
+
+def test_parser_live_body_and_menu_thunks_are_cross_checked():
+    result = check()
+    row = result["dumps"][0]
+    assert row["checks"]["parser_memory_matches_complete_game_body"] is True
+    assert row["checks"]["menu_2b_calls_map_to_expected_thunks"] is True
+    assert len(row["menu_calls"]) == 6
+    assert all(site["matches_expected"] for site in row["menu_calls"])
+    closure = result["file_side"]["helper_near_closure"]
+    assert all(item["complete"] and not item["far_calls"] and not item["indirect"]
+               and not item["direct_absolute_cursor_reference"] for item in closure)
+
+
 def test_retail_pinned_dumps_if_available():
     if not INSTALL.is_dir() or not all(path.is_file() for path in DUMPS):
         pytest.skip("local pinned install or RAM dumps unavailable")
@@ -114,3 +183,6 @@ def test_retail_pinned_dumps_if_available():
     assert all(row["call"]["bytes"] == "9a 25 00 91 18" for row in result["dumps"])
     assert all(row["thunk"]["bytes"] == p.THUNK.hex(" ") for row in result["dumps"])
     assert all(row["helper"]["bytes_match_game"] for row in result["dumps"])
+    closure = result["file_side"]["helper_near_closure"]
+    assert {item["entry"] for item in closure} == {0x7609, 0x82DF, 0x7B82, 0x7BCE, 0x7C8F, 0x7C29}
+    assert sum(item["instruction_count"] for item in closure) == 494

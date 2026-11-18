@@ -24,8 +24,8 @@ misreading (see section 4); it does not yet decide anything.
 | Question | Answer | Basis |
 | --- | --- | --- |
 | Does the ECL classifier (`GAME.OVR:0x9379`) parse operands for 0x15 or 0x2B? | **No.** Both take its default arm: `inc [0x49ED]`, one byte, `operands_parsed: 0` | Concrete walk of the `cmp al,imm`/`jcc` chain (`classify`), checked on retail bytes |
-| Do the 0x15 and 0x2B handlers read operand bytes themselves? | **Yes, by call shape.** They push literal `3` (0x15) and `2` (0x2B) to `2B:2A` and `2B:25`, then `dec [0x49ED]` and a second `2B:2A` on a variable | Linear sweep of the handlers at `0x1C4E` and `0x1E17` |
-| Are `2B:2A` and `2B:25` resolved? | **Not established.** The zero-skew model points at `0x92C3` and `0x9196`; the explicit-push shapes alone do not establish their call frames | Stub bytes; declared `retf` and `[bp+N]` reads |
+| What do the 0x15 and 0x2B handlers pass to the identified targets? | They call the parser `2B:2A` with literal counts 3 and 2, and the lookup helper `2B:25` with the same literal, then decrement `[0x49ED]` and call the parser again with the helper's returned byte | Handler byte walk plus the two-dump target cross-check |
+| Are `2B:2A` and `2B:25` resolved? | **Memory-byte identities cross-checked in two dumps:** `2B:2A` reaches the parser at `GAME.OVR:0x74D3`; `2B:25` reaches the adjacent lookup helper at `0x7609`. Execution and net cursor effect remain unestablished | Unique group mapping, live call operands and target bytes; see [the dump-chain probe](por-ecl-21-operand-helper-dump-probe.md) |
 | What does `2B:2F` (index 22) resolve to? | `0x9379`, the classifier, under the zero-skew model. Its arity matches its callers (none pushed, none declared) | Same model; the arity match is the only positive evidence for it |
 | Is the classifier's caller known? | **Lead, not established.** Under the model, `2B:2F` is called at `GAME.OVR:0x40A3`, right before a call to the dispatch driver `0x3EB7`; a second caller is at `0x199B` | Byte sites |
 
@@ -96,37 +96,44 @@ push ax; call 2B:25` (`0x1E3E`–`0x1E41`), `mov [bp-1],al`, `dec [0x49ED]` (`0x
 Both handlers therefore make the same shape of call: a **literal** word, then `2B:2A`/`2B:25` again on a value the
 earlier call returned, with `[0x49ED]` pushed back by one byte between the two. The handoff's "3 and 2 elements" is what
 the literal says. Whether the literal is an element count, a selector, or a mode is a property of the callee, and the
-callee is not identified (section 3). So the bytes show the handler's pushes; they do not show what the callee does with
-them.
+callee identities were not resolved in the original pass (section 3). The later dump cross-check identifies the parser
+and lookup helper, but still does not show that either call executes.
 
-## 3. The far targets `2B:2A` and `2B:25` (stub bytes, zero-skew model)
+## 3. The far targets `2B:2A` and `2B:25` (stub bytes and dump cross-check)
 
 `START.EXE` holds the overlay stubs (`CD 3F <proc_off> <trailer>`); the image is at file `0x200`. The group whose header
 is at `START.EXE:0x45B` has `fileofs 0x74D3`, `codesz 0x221A`, `fixupsz 0x11A`, `jmpcnt 25`, and its stub run starts at
 `0x471`. The probe checks this header.
 
-| Far call | Stub (START.EXE) | Run index | `proc_off` | Zero-skew target (`0x74D3 + proc_off`) |
+| Far call | Stub (START.EXE) | Run index | `proc_off` | Earlier zero-skew candidate |
 | --- | --- | ---: | ---: | --- |
-| `2B:25` | `0x4D5`: `cd 3f c3 1c 00` | 20 | `0x1CC3` | `GAME.OVR:0x9196` |
-| `2B:2A` | `0x4DA`: `cd 3f f0 1d 00` | 21 | `0x1DF0` | `GAME.OVR:0x92C3` |
+| `2B:25` | `0x4D5`: `cd 3f c3 1c 00` | 20 | `0x1CC3` | `GAME.OVR:0x9196` (superseded by dump cross-check) |
+| `2B:2A` | `0x4DA`: `cd 3f f0 1d 00` | 21 | `0x1DF0` | `GAME.OVR:0x92C3` (superseded by dump cross-check) |
 | `2B:2F` | `0x4DF`: `cd 3f a6 1e 00` | 22 | `0x1EA6` | `GAME.OVR:0x9379` (the classifier) |
 | `2B:34` | `0x4E4`: `cd 3f b1 1f 00` | 23 | `0x1FB1` | `GAME.OVR:0x9484` |
 | `2B:39` | `0x4E9`: `cd 3f cc 20 00` | 24 | `0x20CC` | `GAME.OVR:0x959F` |
 
-The stub bytes are exact (`CD 3F` at each run slot). The zero-skew target is a **model**: it is the group `fileofs`
-plus the stub's `proc_off`, and it is not a resolution. Two checks test it against the bytes:
+The stub bytes are exact (`CD 3F` at each run slot). The zero-skew values are the earlier model and are superseded
+for indices 20 and 21 by the live-byte chain below. In both RAM dumps, the owning group maps uniquely at `0x45C40`.
+The six menu call sites carry live segment `0x1891`: `2B:2A` reaches thunk `1891:002A`, whose far jump lands at
+`40CC:0000` / linear `0x40CC0`; `2B:25` reaches `1891:0025`, whose far jump lands at `40CC:0136` / linear
+`0x40DF6`. The 310-byte body at the first destination matches `GAME.OVR:0x74D3..0x7608`; the 128-byte body at
+the second matches `0x7609..0x7688`. See [the dump-chain probe](por-ecl-21-operand-helper-dump-probe.md).
+
+These are memory-byte identities at unknown capture instants, not register observations or proof that a handler ran.
+The matched parser takes its element count at `[bp+6]`; the call sites push literal 3 for `0x15` and 2 for `0x2B`.
+The matched lookup helper takes an index byte at `[bp+6]` and reads three indexed DS arrays. The parser/helper arity table is:
 
 | Target | Declared bytes (`retf`) | Argument reads | Callers' pushes before the call | Arity |
 | --- | --- | --- | --- | --- |
 | `0x9379` (via `2B:2F`) | `retf` 0 (plain, `0x9483`) | none (no `[bp+N]`) | none emitted at `0x199B` or `0x40A3`; the call before each (`2B:34`) took the one word pushed earlier, and whether that word is popped by `2B:34` is not verified | **match** (0 = 0), conditional on that stack state |
-| `0x92C3` (via `2B:2A`) | `retf 6` (`0x9376`) | `les [bp+6]` (4-byte far pointer), `[bp+8]`, `[bp+10]` | one explicit word, `AX` (2 bytes), from `mov al,N; push ax` | **unresolved**: callee reads beyond the explicit push; caller-frame contents and INT 3Fh stack handling are not traced |
-| `0x9196` (via `2B:25`) | `retf 10` (`0x92C0`) | `les [bp+6]`, `[bp+10]`, `[bp+12]`, `[bp+14]` | one explicit word, `AX` (2 bytes) | **unresolved**: callee reads beyond the explicit push; caller-frame contents and INT 3Fh stack handling are not traced |
+| `0x74D3` (via `2B:2A`, dump identity) | `retf 2` (`0x7606`) | element count at `[bp+6]` | literal 3 for `0x15`, literal 2 for `0x2B`; second call receives the prior helper's returned byte | Target and count argument identified in bytes; full menu framing still depends on helper cursor effects and play-path reachability |
+| `0x7609` (via `2B:25`, dump identity) | `retf 2` (`0x7686`) | index byte at `[bp+6]`, used for three indexed DS arrays | literal 3 for `0x15`, literal 2 for `0x2B` | Target identified in dumps; bounded near-call closure has no direct absolute `[0x49ED]` reference, but indirect effects are not ruled out |
 
-The zero-skew model is shape-consistent for `2B:2F` under its observed callers. For `2B:2A` and `2B:25`, the explicit pushes
-do not cover every byte the candidate procedures read, but that is not enough to reject the targets: the caller's local
-frame and the INT 3Fh dispatch stack effect have not been followed. The menu handlers allocate local frames before these
-calls, so a caller-frame trace is needed before interpreting the extra reads as missing arguments. The bytes do not yet
-establish which procedure runs or what it does. No alternative procedure is assigned to these calls.
+The zero-skew model remains only a model for `2B:2F`. For `2B:2A` and `2B:25`, the dump cross-check supersedes the
+candidate targets. Their matched bodies explain the explicit arguments. Neither match proves execution. The `2B:25`
+helper closure is bounded to direct near calls; its lack of a direct absolute `[0x49ED]` reference does not rule out
+indirect memory effects, so the total cursor advance remains open.
 
 The `2B:2F` match is one positive result, from one call shape. It is not a proof of the model; the model is still an
 assumption.
@@ -135,15 +142,16 @@ assumption.
 
 - **The classifier's default arm** gives 0x15 and 0x2B zero *classifier-parsed* operands and a one-byte stream advance.
   That is a byte fact.
-- **The handlers' helpers** read the operand bytes after the opcode, with literal 3 and 2. That is also a byte fact.
+- **The handlers call the identified parser** with literal counts 3 and 2, and call the identified lookup helper with those
+  values too. This is a byte and dump-cross-check fact; it does not establish the complete menu framing.
 - **The two facts do not contradict each other.** Both can hold if the handler's helper calls are the operand parse for
   these opcodes, and the classifier never runs its parser for them. The handoff's "zero-operand table vs. handlers parse
   3 and 2" is therefore not, by itself, a contradiction in `GAME.OVR`.
 - **What is open:** (a) whether the classifier runs for 0x15/0x2B on the play path before the dispatcher (its caller is
-  not tied to the ECL loop); (b) what `2B:25` and `2B:2A` do and how far they advance `[0x49ED]` (their targets are
-  conditional on a stub-mapping model and their caller frames/dispatch path are not traced, so the net advance is unknown);
-  (c) whether the literal 3 or 2 is an element count. Until (b) is settled,
-  the operand count of either menu is **not** established, so this doc does not choose between the `spec-menus` framing
+  not tied to the ECL loop); (b) the net cursor effect of `2B:25` (its target is identified, but indirect memory effects
+  and its relationship to stream data are not traced); (c) whether its returned value controls a count or another mode;
+  the literal 3 or 2 passed to `2B:2A` is its parser element count, but the complete menu framing and total consumed
+  length are not established. Until (b) is settled, this doc does not choose between the `spec-menus` framing
   (3 fixed + count at 2 for `0x15`; 2 fixed + count at 1 for `0x2B`) and the conservative stop.
 - **A lead on the caller of the classifier (not established):** under the model, `2B:2F` (the classifier) is called at
   `GAME.OVR:0x40A3`, right after `2B:34` and immediately before `push [0x49EB]; push cs; call 0x3EB7` at `0x40AD`. `0x3EB7`
@@ -153,31 +161,28 @@ assumption.
 
 ## 5. Not established
 
-- The identity of the far callees `2B:2A` and `2B:25`, and of `2B:4D` (its stub is not in the run; the probe's
+- Whether the identified `2B:2A` parser and `2B:25` helper execute at these call sites. Their identities are memory-byte
+  cross-checks, not execution observations. `2B:4D` remains unresolved (its stub is not in the run; the probe's
   `seg_2b_calls` records that it has no stub).
-- Whether the stub-to-procedure mapping is zero-skew for indices 20 and 21. The explicit-push comparison is insufficient to
-  decide because caller-frame bytes and INT 3Fh stack handling are not modeled.
-- The stream advance of `2B:25` and `2B:2A`, and so the operand count of each menu.
+- The net stream advance of `2B:25` and the full combined cursor effect of each menu handler. The bounded helper closure
+  lacks a direct absolute reference to `[0x49ED]`, but indirect memory effects are not ruled out.
+- Whether the parser's count argument corresponds to the full menu operand count and whether the classifier's default
+  increment is also on the play path.
 - Whether the classifier runs before the dispatcher for 0x15 and 0x2B in play, and what its caller's loop is.
 - The meaning of the stores into `[0x6F7F]` (the key) and `[0x49ED]` (the stream cell), beyond what the arms show.
 
 ## 6. The runtime observations that would discriminate the hypotheses
 
-The static bytes cannot close (a) to (c) above. These Hatari observations would, and none needs a new mapping:
+The static bytes cannot close the remaining execution and net-cursor questions. These Hatari observations would, and none needs a new mapping:
 
-1. **Stub entry.** Break at `START.EXE` stub `0x4DA` (`2B:2A`) and `0x4D5` (`2B:25`) while the 0x15 or 0x2B handler runs.
-   Record the procedure the INT 3Fh path actually enters: its load segment and offset. Then read the first three bytes
-   there. If they are `55 89 E5` at the zero-skew file offset (`GAME.OVR` `0x92C3` and `0x9196` after the overlay load),
-   the zero-skew mapping holds for those indices; the caller-frame comparison is still needed to interpret the calls.
-   If they are something else, the mapping differs, and the entry bytes name the real callee.
-2. **Stack at callee entry.** At the same break, capture SS:SP, the caller's BP and the words around the return frame and
-   explicit pushes. Then compare the callee's `[bp+N]` reads with the caller-frame trace; the first pushed word alone does
-   not establish the complete argument block.
-3. **Classifier path.** Break at `GAME.OVR` `0x9390` and log `[0x6F7F]` (the opcode) and `[0x49ED]` before and after the
+1. **Execution and stack.** Break at stubs `0x4DA` (`2B:2A`) and `0x4D5` (`2B:25`) while a menu handler runs. Record whether
+   each call executes, its actual callee address, SS:SP, caller BP and the words around the return frame and explicit
+   pushes. The dump matches identify candidate bodies, but only this observation establishes execution and live arguments.
+2. **Classifier path.** Break at `GAME.OVR` `0x9390` and log `[0x6F7F]` (the opcode) and `[0x49ED]` before and after the
    `inc` at `0x947E`. Expect `0x15` or `0x2B` on entry and `[0x49ED]` advanced by exactly 1 when the default arm runs.
    Also log whether the call to `0x9379` comes from `0x40A3` or `0x199B` on a menu opcode.
-4. **Helper advance.** Log `[0x49ED]` immediately before and after each `2B:25` and `2B:2A` call inside the two handlers
-   (`0x1E41`, `0x1E51`, `0x1C98`, `0x1CA8`). The difference is the helper's net stream advance, which settles (b) and
+3. **Helper advance.** Log `[0x49ED]` immediately before and after each `2B:25` and `2B:2A` call inside the two handlers
+   (`0x1C6B`, `0x1C98`, `0x1CA8`, `0x1E29`, `0x1E41`, `0x1E51`). The difference is the helper's net stream advance, which settles (b) and
    with it the operand count.
 
 Existing hooks for these breaks are in [por-hatari-load-trace.md](por-hatari-load-trace.md) and
