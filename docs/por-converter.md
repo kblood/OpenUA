@@ -186,6 +186,13 @@ cross-checks only; none of them is used as a PoR fact.
   placement of the layout candidate is predicted from that run, not observed in the
   CPU. The probe cross-checks the partial stub row and excludes malformed slot 7 from
   its entry walks. It finds no caller and maps no wall.
+- **WALLDEF loader-to-table link** (`tools/por_walldef_table_link_probe.py`, see
+  [`por-walldef-table-link-probe.md`](por-walldef-table-link-probe.md)). A byte-checked
+  path passes the `WALLDEF` and `.dax` Pascal pieces to a DAX loader, divides the
+  returned size by 780, and uses `DS:0x6A58`; the neighboring 156-byte consumer uses
+  the same slot, and its static owner calls it 18 times. This is consistent with five
+  156-byte slices per 780-byte record. The group and runtime path remain unproven,
+  and no archive, block, tile, or screen binding is established.
 - **GEO load-site layout** (`tools/por_area_evidence.py`, see
   [`por-area-evidence.md`](por-area-evidence.md)). The GEO load routine's layout owner
   is `GAME.OVR:0x2F6FF`, found by layout only. After the walk bound was corrected, the
@@ -872,8 +879,9 @@ validation; see [`por-ecl-decoder.md`](por-ecl-decoder.md).
    slice 5 decoded palette indices from 44 of 45 8X8D blocks, leaving one block
    unsupported. The ECL census records 35 framing-tagged `LOAD_PIECES` records
    (25 unique locations), but only one block's walk reaches end-of-block. These
-   are not verified area-to-WALLDEF bindings. A PoR tile-to-screen reference and
-   PoR-validated ECL framing are still needed. Slice 6's raw-index preview also
+   are not verified area-to-WALLDEF bindings. The static WALLDEF name-to-table trace
+   narrows one loader path but supplies no runtime block or tile identity. A PoR
+   tile-to-screen reference and PoR-validated ECL framing are still needed. Slice 6's raw-index preview also
    leaves many references out of range. Slice 7 compares the raw, CoK and naive
    readings by count and selects none. See the wall, tile, candidate and
    index-relation reports.
