@@ -183,6 +183,14 @@ high nibble (wall-art code) of the selected edge. The `jt955` switch treats code
 tested step at that edge. It does not show whether the original PoR game blocks the corresponding
 edge, and the save-to-GEO edge binding remains a hypothesis.
 
+For a converter-to-runtime consistency check, the candidate GEO2 block-20 source cell `(x=15,
+y=4)` in the emitted `por_map.json` has planes `[0xEB,0xE0,0x00,0x04]`; under the converter's
+still-provisional compass labels, its N edge is slot 14 / door 0. The generated OpenUA cell
+`(col=4,row=15)` is `EE 1B EE 00 00 00`, so edge index 0 has wall code 14. The OpenUA `jt210`
+read of direction 0 returned 14 during the step. This checks that the emitted edge byte reaches
+the intended OpenUA reader slot for this test fixture. The source block identity, PoR compass
+label and original-game response at this cell are not established by that agreement.
+
 The instrumented binary SHA-256 was
 `A53E39D7326BB08642B3C9BF775FBBC30A9A88D14C214953D02249F75CA60E3C`; the build exited 0 with
 a Make clock-skew warning. Hatari PID 1220 exited rc 0, with its 240 s watchdog not firing. The
@@ -249,7 +257,7 @@ belonged to this session.
 ## Next step (needs a decision)
 
 The overland trace confirms the candidate coordinates as the live OpenUA entry coordinates and
-shows the tested edge is blocked by wall code 14. Next, compare the original PoR cell/edge and
-movement outcome against this exact candidate, including a live DOS observation if the codewheel
-gate can be passed. Until then, the saved-position join and the block-to-area binding remain
-hypotheses, and no parity claim is supported.
+shows the emitted wall code 14 is consumed at the matching engine edge slot. Next, compare the
+original PoR cell/edge and movement outcome against this exact candidate, including a live DOS
+observation if the codewheel gate can be passed. Until then, the saved-position join and the
+block-to-area binding remain hypotheses, and no parity claim is supported.
