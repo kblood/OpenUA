@@ -138,6 +138,11 @@ cross-checks only; none of them is used as a PoR fact.
   but the loader's returned pointer is not tied to a GEO block, so plane 2 is still not claimed;
   see [`por-geo-copy-helper-probe.md`](por-geo-copy-helper-probe.md) and
   [`por-geo-buffer-fill-probe.md`](por-geo-buffer-fill-probe.md).
+- **GEO selector filename path** (`tools/por_geo_selector_format_probe.py`, see
+  [`por-geo-selector-format-probe.md`](por-geo-selector-format-probe.md)). PoR bytes establish a
+  decimal formatter whose leading digit is appended to the `GEO` stem and carried into the
+  composed open path, conditional on module/loader/wrapper identities. The DS prefix and runtime
+  selector are unresolved, so no archive, block or area mapping follows.
 - **GEO source loader target** (`tools/por_geo_loader_target_probe.py`, see
   [`por-geo-loader-target-probe.md`](por-geo-loader-target-probe.md) and
   [`por-geo-loader-caller-frame-probe.md`](por-geo-loader-caller-frame-probe.md)). Existing dumps
