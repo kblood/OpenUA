@@ -60,6 +60,11 @@
   It is a container check, not a conversion. See
   [`por-geo-all-map-group.md`](por-geo-all-map-group.md) and "All-GEO grouped
   container check" below.
+- **Single-block test fixture** (`tools/por_geo_single_block_plan.py`): narrows a
+  smoke plan to one selected GEO block, producing a single-area test-only DSN
+  through the existing pipeline. The area and entry remain placeholders; a passing
+  host loader check does not run OpenUA. See
+  [`por-geo-single-block-plan.md`](por-geo-single-block-plan.md).
 
 Every output says what it is. Each file carries `"playable": false`, or a
 MAP-ONLY banner in the report. A test-only AREATEST sweep has now read and
