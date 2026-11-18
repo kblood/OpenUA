@@ -95,5 +95,7 @@ runtime loading or gameplay validation.
 
 The bounded OpenUA runtime check of this one-area design is recorded in
 [`por-save-geo-join-runtime-2026-11-18.md`](por-save-geo-join-runtime-2026-11-18.md). It
-reached the area-2 load, but the walk did not render, so the candidate position, the first
-forward edge and the join remain unverified.
+reached the area-2 load, observed entry at `(15,4)`, blocked a northward step on wall code
+14, then completed one west-facing step to `(14,4)`. This verifies a narrow OpenUA runtime
+slice for the emitted design; it does not verify the DOS save-to-area or block-to-area join,
+or establish original-game parity.
