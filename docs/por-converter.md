@@ -116,6 +116,13 @@ cross-checks only; none of them is used as a PoR fact.
   is an EGA rectangle fill with no pixel-source operand, and its bounded decoded
   caller chain selects no 8X8D block or tile. The adjacent `8X8d1` literal remains
   a layout-only candidate; no archive or tile binding is established.
+- **8X8D archive-reader candidates** (`tools/por_8x8d_archive_chain_probe.py`, see
+  [`por-8x8d-archive-chain-probe.md`](por-8x8d-archive-chain-probe.md)). A bounded
+  static trace found a START routine that requests block 201 beside `8X8d1` and a
+  VROOMM routine that reads the GEO selector and calls an unresolved loader-shaped
+  target. Neither has an established caller, file handle, or DAX block read; the
+  image-relative far-call mapping remains a model. This is a bounded negative, not
+  evidence that PoR never reads 8X8D or that these routines cannot run.
 - **Group-29 WALLDEF target** (`tools/por_wall_group29_target_probe.py`, see
   [`por-wall-group29-target-probe.md`](por-wall-group29-target-probe.md)). The one
   runtime run observed a `0x2E8F7` seek and `0x120B`-byte read. The `33E7:05FD`
