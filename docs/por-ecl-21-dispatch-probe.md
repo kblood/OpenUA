@@ -6,8 +6,8 @@ and that handler's far calls. Question: does the `0x21` path reach the GEO loade
 or supply equivalent archive/block arguments?
 
 **Answer: conditionally mapped in RAM, execution not established.** The direct edge into the GEO body is absent.
-Under the zero-skew model no far call lands on the GEO stub, and the paragraph-residue probe rejects that
-model for every site. A later RAM-dump check finds that four `03D5:003E` calls instead target the exact five-byte
+Under the zero-skew model no far call lands on the GEO stub, and the paragraph-residue probe finds that no
+site reaches it under a paragraph-aligned model for any fixup delta. A later RAM-dump check finds that four `03D5:003E` calls instead target the exact five-byte
 START stub 6 in both captures; that stub's procedure word points to the GEO-loader candidate at `0x2F6FF`.
 This is a memory-byte target chain, not evidence any call ran. Nine of the eleven calls were model-dependent
 in the original file-only zero-skew analysis; follow-up dump checks now match four to stub 6, and the separate
