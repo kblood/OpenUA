@@ -106,13 +106,12 @@ findings:
   the setter or clearer run, remains unidentified.
 - The reader `0x2EC47` returns a 2-bit plane-3 field. Four candidate far-call
   sites are decoder-verified and fixup-listed. Their following instructions
-  compare the result with 0, 1 or 3, but the compared branch arms are not
-  decoded far enough to assign gameplay meaning.
+  compare the result with 0, 1 or 3.
 
 The probe's address model is conditional: one dump-backed anchor supports the
 `+0x7E` model at one reader site, while the writer/clearer group is absent from
-both pinned dumps. These findings are caller and branch-shape evidence only;
-they do not establish an event, a movement check, or a door rule.
+both pinned dumps. These findings alone do not establish an event, a movement
+check, or a door rule.
 
 A second static probe ([`por-door-indirect-probe.md`](por-door-indirect-probe.md))
 searched decoded instruction starts for indirect entries into the writer/clearer
@@ -123,13 +122,20 @@ GAME.OVR walk covers 94.6% of group-body bytes, and 8,654 bytes outside groups
 are not walked, so this is not proof that no caller exists. The trigger remains
 unknown.
 
-Two readings follow from the bytes, and neither is proven. First, PoR code
-**writes** the value `01` into a door field, so `01` is a state the game
-produces and not only a stored value. Second, the same code clears fields, so
-fields change at runtime. Which event sets or clears a field is not
-established. The consumer that turns a plane-3 value into "may the party cross
-this edge" is not identified. The doc names `0x2EC47` as a reader, but it does
-not say that the reader is the movement check.
+A follow-up branch probe ([`por-door-reader-branch-probe.md`](por-door-reader-branch-probe.md))
+decoded the arms after the four reader calls. At `0x17469` in the stub-1 root
+`0x17438`, reader result `R == 1` reaches `0x16E06`, which updates the party's
+position bytes; `R == 0` does not. Results 2 or 3 reach that step only if an
+unresolved callee returns nonzero. The other three reader sites classify,
+inspect a neighbour, or clamp an edge and do not move the party.
+
+This narrows the static evidence but does **not** prove a GEO door mapping.
+The reader target is still an M1 address-model candidate, its return value 1
+is also the reader's default, and the buffer read at `+0x300` has not been
+joined to a loaded GEO block's plane 3. Therefore the branch establishes
+`R == 1 -> decoded position update` in this conditional static path, not
+`GEO door flag 1 -> passable`. Which events set or clear plane-3 fields also
+remains unknown.
 
 ## Evidence class 3: OpenUA runtime semantics (repo code, measured in-tree)
 
@@ -166,7 +172,7 @@ but is a different title and is not used to decide anything here.
 | --- | --- | --- | --- | --- |
 | slot 0 -> open | `0x00` | 88 slot-0 doors exist; their effect is unknown | open | not proven either way |
 | door 0 wall -> solid | `0xE0\|S` | 9,780 wall edges; 100 one-sided disagreements | solid | not proven |
-| door 1 -> secret door | `0x10\|S` | written by PoR code as `01`; 2,876 wall edges; 1 = two-sided, common | passes, prints "A secret door!" | **not proven**: no PoR check that flag 1 passes the party |
+| door 1 -> secret door | `0x10\|S` | PoR writes field `01`; conditional static branch with reader result `R == 1` updates position, but reader identity and GEO-plane source are unestablished; 2,876 wall edges | passes, prints "A secret door!" | **not proven**: no established link from GEO flag 1 to `R == 1`, nor PoR evidence for the secret-door message |
 | door 2 or 3 -> blocked | `0xF0\|S` | 130 and 14 wall edges | refuses (menu deferred) | **not proven**; 2 vs 3 cannot be separated, and both refuse today, so a split changes bytes but not play |
 
 Splitting flags 2 and 3 into nibbles 2 and 3 would change the emitted map
@@ -176,20 +182,22 @@ value opens does not exist yet.
 
 ## Decision
 
-No change to `tools/por_map.py`. No falsification test is added for a mapping
-branch, because no branch was changed. The census tests are in
-`tests/test_por_geo_door_census.py`; the caller-trace tests are in
-`tests/test_por_door_caller_probe.py`.
+No change to `tools/por_map.py`; the edge mappings remain provisional. No
+falsification test is added for a mapping branch, because no branch was
+changed. The census tests are in `tests/test_por_geo_door_census.py`; the
+caller and movement-branch tests are in `tests/test_por_door_caller_probe.py`
+and `tests/test_por_door_reader_branch_probe.py`.
 
 ## Limits
 
 - Census counts stored bytes. It says nothing about passability.
 - Shared-edge agreement measures consistency only.
-- The executable evidence is a static decode. No routine was shown to be the
-  movement check, and no gameplay movement or door capture was made. A bounded
-  startup INT 3Fh capture exists, but it reaches a `retf` no-op and does not
-  enter the gameplay path. The interactive runtime path is blocked by copy
-  protection (`docs/por-wall-runtime-capture-attempt.md`).
+- The executable evidence is static. A conditional branch from reader result
+  `R == 1` to a decoded position update is shown in
+  `por-door-reader-branch-probe.md`, but the reader identity and the GEO-to-
+  buffer source link are not established. No gameplay movement or door
+  capture was made. The interactive runtime path is blocked by copy protection
+  (`docs/por-wall-runtime-capture-attempt.md`).
 - The `slot S` texture group is still unverified against WALLDEF.
 - Other titles (GoldBox, CoK, COAB) are hypothesis only.
 
@@ -205,12 +213,14 @@ at START function `0x0A9FC` has since been checked at runtime (see
 trigger. The overlay operands at `DS:0x6B84` still need their own DS trace, and
 the indirect probe did not resolve them. Even a resolved pointer to stub 1
 would identify only a trigger path; it would not establish the writer's
-gameplay event or the reader branches' movement effect.
+gameplay event. The reader branch effects are now decoded statically, but
+their input is not yet tied to a specific loaded GEO cell.
 
-Even if the trigger is found, the mapping still needs the branch behavior of
-the reader's callers. A live capture of the resident overlay at those branches
-could pair the returned 2-bit field with a movement result, but the current
-runtime route is blocked at copy protection (see
+The next static discriminator is to establish the reader's live target and
+trace its buffer back to the loaded GEO block, so its 2-bit return can be
+paired with the raw door flag. The writer's caller/event remains a separate
+open edge. A live capture could confirm those links and the movement outcome,
+but the current runtime route is blocked at copy protection (see
 [`por-wall-runtime-capture-attempt.md`](por-wall-runtime-capture-attempt.md)).
 Until one of those observations identifies the event and passage effect, all
 mapping branches stay hypotheses.
