@@ -16,6 +16,7 @@ Most tools are pure standard library; `hfs_extract.py` needs `machfs`, and
 | `rsrc_list.py`   | --              | List a Mac resource fork's contents.   |
 | `dis68k.py`      | objdump         | Disassemble & annotate the CODE segments. |
 | `rsrcpack.py`    | --              | Pack a resource fork into the FRSC archive. |
+| `por_area_evidence.py` | --   | Pool of Radiance GEO map-load evidence probe: GEO literal's layout owner located (GAME.OVR:0x2F6FF, the WALLDEF wrapper, not a GEO loader; the GEO fill at 0x2F9BE reads the literal); WALLDEF layout owner at 0x2EEF4 is a layout candidate only; block-to-area and start entry not established, no mapping, playable: false. See `docs/por-area-evidence.md`. |
 
 `macrsrc.py` (resource-fork reader) and `mactraps.py` (A-line trap names) are
 shared modules, imported by the tools above rather than run directly.
