@@ -280,8 +280,9 @@ Not claimed: the GEO header keeps the same art-binding bytes that flat rows
 already use (`ART_BLOCK`, copied from a HEIRS area, not from Pool of Radiance). The
 GAME001 XP, platinum, gems, jewelry and equipment fields are the `dsn.Design`
 writer defaults, recorded in the design row as `game001_writer_defaults`. None of
-these values is recovered from the install. The manifest and report stay
-`playable: false`.
+these values is recovered from the install. Door passability is also a
+provisional CoK-derived assumption; PoR plane-3 evidence has not established
+these rules. The manifest and report stay `playable: false`.
 
 ### Loader-equivalent checks (per emitted DSN)
 
@@ -439,6 +440,12 @@ Full notes and limits: [`por-geo-all-map-group.md`](por-geo-all-map-group.md).
   pipeline) passed for all 29 GEO files, each the engine's 12962-byte size, and each
   parses back through `geo.Geo.parse`. The run records `runtime_loaded: false` and
   `engine_executed: false`.
+- **Repeatability check (2026-11-18).** I reran the checked-in pipeline against
+  the same pinned install and the existing test-only all-GEO plan into two fresh
+  output folders. Both runs decoded 29/29 blocks, emitted one 29-area design, and
+  passed the host loader-equivalent check. All 90 output files had identical
+  SHA-256 values between runs. The manifest keeps the invented area/start labels
+  and `runtime_loaded: false`; this is not a gameplay or runtime-load claim.
 - **Bounded Hatari parse run (run-e, 2026-11-17).** A separate `FRUA_AREATEST`
   harness run used the generated `TGALLMAP.DSN/GEO001.DAT` (12,962 bytes,
   SHA-256 `C96DFDFB743AD1967E37A36BF538EA9DF307B5D18F143F66BD7E1AB5C14B1624`).
