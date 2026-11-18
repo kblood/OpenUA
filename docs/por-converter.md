@@ -43,6 +43,13 @@
   their fixup tables. The pinned retail run found 181 arithmetic candidates but
   no established caller or GEO mapping. See
   [`por-geo-farcall-census.md`](por-geo-farcall-census.md).
+- **GEO far-call dump cross-check** (`tools/por_geo_farcall_dump_crosscheck.py`):
+  compares those conditional candidates with two captured RAM dumps. The 90
+  mapped sites per dump have delta `0x1866`, with no candidate-constraint match
+  or target window matching the GEO stub; 91 candidate rows remain unobserved in
+  absent or unmapped groups. This is capture-scoped memory evidence, not proof
+  that a call ran. See
+  [`por-geo-farcall-dump-crosscheck.md`](por-geo-farcall-dump-crosscheck.md).
 - **Pipeline** (`tools/por_pipeline.py`): one repeatable run over a user install:
   GEO map-only designs (optional plan: one area per design, or a multi-area
   map-only design, see below), and with `--with-ecl-text` the ECL string
