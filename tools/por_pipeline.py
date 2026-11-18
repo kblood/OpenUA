@@ -82,6 +82,13 @@ Usage
 Output folder: must be outside the install and, inside this repository, under
 ``data/`` (git-ignored). Stdlib plus the repo's own tools only.
 
+Opt-in flag-2 candidate (default off). ``--candidate-flag2-passable N`` (0..15)
+encodes Gen1 door flag 2 as OpenUA passability N in every normalized map and
+design the run writes, instead of 15. Rows then carry ``flag2_candidate``, the
+manifest gets a ``candidate`` section, and the report and 'not claimed' list say
+the value is an unverified candidate. Door 3 is unchanged and unresolved. Absent,
+every output is byte-identical to the run without the option.
+
 Exit codes
   0  every block decoded, every planned design round-tripped, install unchanged
      (and, with --with-ecl-text, the ECL census exited 0)
@@ -141,15 +148,41 @@ REPLACED_DIR = ".replaced"          # inside the staging folder: old owned entri
 OWNED_OUTPUTS = ("maps", "designs", ECL_CENSUS_DIR, ECL_DIAG_DIR,
                  "por_pipeline.json", "por_pipeline_report.md")
 
+DOOR_LINE_DEFAULT = (
+    "Door mapping: one cited PoR DOS route reports a flag-2 locked door and successful Bash crossing; the GEO-to-reader binding and general flag-2 rule remain unproven. Flag 3 is a CoK/other-title hypothesis; flags 2 and 3 currently map to OpenUA passability 15.")
+DOOR_LINE_CANDIDATE = (
+    "Door mapping: one cited PoR DOS route reports a flag-2 locked door and successful Bash crossing; the GEO-to-reader binding and general flag-2 rule remain unproven. Flag 3 is a CoK/other-title hypothesis and stays UNRESOLVED (passability 15). Flag 2 maps to OpenUA passability 15 by default; in this run only, flag 2 is written as passability %d (OPT-IN CANDIDATE, not verified, not the default, not a door rule).")
+
 UNSUPPORTED = [
     "No FRUA art binding: walls use the dsn.py ART_BLOCK; PoR wall art is unresolved.",
-    "Door mapping: one cited PoR DOS route reports a flag-2 locked door and successful Bash crossing; the GEO-to-reader binding and general flag-2 rule remain unproven. Flag 3 is a CoK/other-title hypothesis; flags 2 and 3 currently map to OpenUA passability 15.",
+    DOOR_LINE_DEFAULT,
     "No events, text, monsters, items, shops or campaign logic.",
     "Entry points come from the plan only; none are recovered from the install.",
     "No runtime check: nothing here boots OpenUA or walks the emitted design.",
     "Loader-equivalent checks (tools/por_dsn_load_smoke.py) are host readings of the "
     "emitted bytes. The engine loader is not run, and no runtime load is claimed.",
 ]
+
+
+def unsupported_list(flag2_passability: Optional[int] = None) -> list[str]:
+    """The 'not claimed' list. Default (None) is ``UNSUPPORTED`` unchanged. With an
+    opt-in flag-2 candidate the door line says so instead of 'flags 2 and 3 both
+    map to 15'; flag 3 is still stated as unresolved."""
+    if flag2_passability is None:
+        return list(UNSUPPORTED)
+    return [DOOR_LINE_CANDIDATE % flag2_passability if u == DOOR_LINE_DEFAULT else u
+            for u in UNSUPPORTED]
+
+
+def candidate_block(flag2_passability: int) -> dict:
+    """The manifest's record of an opt-in flag-2 candidate. Never claimed as verified."""
+    return {"opt_in": True, "default": False, "playable": False,
+            "rule": "locked", "door": 2,
+            "flag2_passability": flag2_passability,
+            "default_flag2_passability": 15,
+            "door3_passability": 15, "door3_status": "unresolved",
+            "status": "opt-in candidate; not verified; not promoted to default"}
+
 
 ECL_UNSUPPORTED = list(ptd.NOT_CLAIMED) + [
     "The ECL stage writes only under the ecl-census and ecl-text-diagnostic folders; "
@@ -357,8 +390,12 @@ def _load_group(where: str, d: dict, name: str) -> dict:
 # Stages
 # --------------------------------------------------------------------------
 
-def stage_blocks(install: Path, out: Path) -> list[dict]:
-    """Decode every TOC block of every GEO archive. Refusals are recorded."""
+def stage_blocks(install: Path, out: Path,
+                 flag2_passability: Optional[int] = None) -> list[dict]:
+    """Decode every TOC block of every GEO archive. Refusals are recorded.
+
+    ``flag2_passability`` (opt-in candidate, None = default) is passed to
+    ``por_map.convert``; a decoded row then records it as ``flag2_candidate``."""
     rows = []
     for n in GEO_NUMBERS:
         dax = locate_member(install, "GEO%d.DAX" % n)
@@ -370,10 +407,13 @@ def stage_blocks(install: Path, out: Path) -> list[dict]:
             try:
                 res = pm.convert(dax, folder, block_id=None, index=te.index,
                                  expect=[], entry=None, area=pm.DEFAULT_AREA,
-                                 name=pm.DEFAULT_NAME, title=None)
+                                 name=pm.DEFAULT_NAME, title=None,
+                                 flag2_passability=flag2_passability)
                 row["status"] = "decoded"
                 row["decoded_sha256"] = res["norm"]["source"]["decoded_sha256"]
                 row["warnings"] = len(res["warnings"])
+                if flag2_passability is not None:
+                    row["flag2_candidate"] = flag2_passability
             except (pm.PorMapError, PorSourceError) as exc:
                 row["status"] = "refused"
                 row["reason"] = str(exc)
@@ -381,28 +421,33 @@ def stage_blocks(install: Path, out: Path) -> list[dict]:
     return rows
 
 
-def stage_designs(install: Path, out: Path, designs: list[dict]) -> list[dict]:
+def stage_designs(install: Path, out: Path, designs: list[dict],
+                  flag2_passability: Optional[int] = None) -> list[dict]:
     """Emit each planned map-only design and read it back with OpenUA's loader.
 
-    A flat row is one area through ``por_map.convert`` (unchanged). A grouped row
+    A flat row is one area through ``por_map.convert``. A grouped row
     (``kind == GROUP_KIND``) is one DSN folder with several areas; see
-    ``stage_group_design``.
+    ``stage_group_design``. ``flag2_passability`` (opt-in candidate, None = default)
+    reaches both; a candidate run records it as ``flag2_candidate`` on each row.
     """
     rows = []
     for d in designs:
         if d.get("kind") == GROUP_KIND:
-            rows.append(stage_group_design(install, out, d))
+            rows.append(stage_group_design(install, out, d, flag2_passability))
             continue
         row = {"name": d["name"], "geo": d["geo"], "index": d["index"],
                "area": d["area"], "entry": {"x": d["entry"][0], "y": d["entry"][1],
                                             "facing": d["facing"]}}
+        if flag2_passability is not None:
+            row["flag2_candidate"] = flag2_passability
         dax = locate_member(install, "GEO%d.DAX" % d["geo"])
         folder = out / "designs" / d["name"]
         facing = pm.FACINGS[d["facing"]]
         try:
             pm.convert(dax, folder, block_id=None, index=d["index"], expect=[],
                        entry=(d["entry"][0], d["entry"][1], facing),
-                       area=d["area"], name=d["name"], title=d["title"])
+                       area=d["area"], name=d["name"], title=d["title"],
+                       flag2_passability=flag2_passability)
         except (pm.PorMapError, PorSourceError) as exc:
             row["status"] = "refused"
             row["reason"] = str(exc)
@@ -418,12 +463,13 @@ def stage_designs(install: Path, out: Path, designs: list[dict]) -> list[dict]:
     return rows
 
 
-def _decode_area(install: Path, a: dict) -> tuple[dict, Geo]:
+def _decode_area(install: Path, a: dict,
+                 flag2_passability: Optional[int] = None) -> tuple[dict, Geo]:
     """Decode one planned area's TOC block into an OpenUA Geo with its entry point.
 
     Mirrors the decode in ``por_map.convert`` but writes nothing, so a grouped
     design can be checked in full before any folder is created. Raises the
-    decoder's own refusal types.
+    decoder's own refusal types. ``flag2_passability`` is the opt-in candidate.
     """
     dax = locate_member(install, "GEO%d.DAX" % a["geo"])
     data = dax.read_bytes()
@@ -433,13 +479,15 @@ def _decode_area(install: Path, a: dict) -> tuple[dict, Geo]:
     raw = pm.rle_decode(data[start:start + te.comp_size], te.raw_size)
     cells = pm.decode_gen1_geo(raw)
     x, y = a["entry"]
-    geo = pm.build_openua_geo(cells, (x, y, pm.FACINGS[a["facing"]]))
+    geo = pm.build_openua_geo(cells, (x, y, pm.FACINGS[a["facing"]]),
+                              flag2_passability=flag2_passability)
     src = {"block_id": te.block_id, "raw_size": te.raw_size,
            "decoded_sha256": hashlib.sha256(raw).hexdigest()}
     return src, geo
 
 
-def stage_group_design(install: Path, out: Path, d: dict) -> dict:
+def stage_group_design(install: Path, out: Path, d: dict,
+                       flag2_passability: Optional[int] = None) -> dict:
     """One MULTI-AREA map-only design: every area's GEO in one ``NAME.DSN`` folder.
 
     All areas are decoded first. If any area is refused, the design is refused and
@@ -447,11 +495,15 @@ def stage_group_design(install: Path, out: Path, d: dict) -> dict:
     the folder (GAME001.DAT plus GEO<NNN>.DAT per area). Each emitted GEO is read
     back with ``geo.Geo.parse`` and compared with its in-memory build; GAME001 is
     checked for the start area and start entry. Still playable=false.
+    ``flag2_passability`` (opt-in candidate, None = default) is applied to every
+    area's walls and recorded as ``flag2_candidate`` on the design row.
     """
     name = d["name"]
     row = {"name": name, "kind": GROUP_KIND, "scope": GROUP_SCOPE, "playable": False,
            "title": d["title"], "start_area": d["start_area"],
            "start_entry": d["start_entry"], "areas": []}
+    if flag2_passability is not None:
+        row["flag2_candidate"] = flag2_passability
     built = []
     refused = []
     for a in d["areas"]:
@@ -460,7 +512,7 @@ def stage_group_design(install: Path, out: Path, d: dict) -> dict:
                           "facing": a["facing"]}}
         row["areas"].append(arow)
         try:
-            src, geo = _decode_area(install, a)
+            src, geo = _decode_area(install, a, flag2_passability)
         except (pm.PorMapError, PorSourceError, GeoError) as exc:
             arow["status"] = "refused"
             arow["reason"] = str(exc)
@@ -528,7 +580,10 @@ def _round_trip(dsn: Path, entry: tuple, facing: int) -> dict:
         return checks
     checks["parses"] = True
     checks["byte_round_trip"] = geo.build() == raw
-    checks["entry_point"] = geo.entry_point(0) == (entry[1], entry[0], facing)
+    # `entry` is the source PoR (x, y). The converter maps source x to OpenUA
+    # row and source y to OpenUA column, matching build_openua_geo and the
+    # tested runtime coordinate transform.
+    checks["entry_point"] = geo.entry_point(0) == (entry[0], entry[1], facing)
     return checks
 
 
@@ -672,6 +727,14 @@ def render_report(manifest: dict) -> str:
     lines = [
         "# Pool of Radiance pipeline run (MAP-ONLY)", "",
         "**`playable: false`.** Container checks only; no runtime check.", "",
+    ]
+    cand = manifest.get("candidate")
+    if cand is not None:
+        lines += ["**OPT-IN CANDIDATE: door flag 2 written as OpenUA passability %d "
+                  "(default 15). Not verified, not promoted to default, `playable: false`. "
+                  "Door 3 stays unresolved (passability 15).**"
+                  % cand["flag2_passability"], ""]
+    lines += [
         "| Item | Count |", "| --- | ---: |",
         "| GEO blocks decoded | %d / %d |" % (s["blocks_decoded"], s["blocks_total"]),
         "| Planned designs round-tripped | %d / %d |" % (s["designs_ok"], s["designs_planned"]),
@@ -701,7 +764,7 @@ def render_report(manifest: dict) -> str:
     if "ecl_text" in manifest:
         lines += _render_ecl(manifest["ecl_text"])
     lines += ["", "## Not claimed", ""]
-    lines += ["- " + u for u in UNSUPPORTED]
+    lines += ["- " + u for u in manifest.get("unsupported", UNSUPPORTED)]
     return "\n".join(lines) + "\n"
 
 
@@ -828,13 +891,25 @@ def _publish(staging: Path, out: Path, created: list[Path]) -> None:
 
 
 def run(install: Path, out: Path, plan: Optional[Path], *,
-        with_ecl_text: bool = False) -> tuple[dict, int]:
+        with_ecl_text: bool = False,
+        flag2_passability: Optional[int] = None) -> tuple[dict, int]:
     """Run every stage into a staging folder beside OUT, then publish.
 
     The install is fingerprinted before the stages and again after them. A
     change is a refusal, and nothing is published. On any failure only the
     staging folder and the directories this call created are removed.
+
+    ``flag2_passability`` is an OPT-IN candidate (None, the default, is the
+    unchanged pipeline). When given, door flag 2 is encoded as that OpenUA
+    passability in every map and design this run writes, and the manifest
+    carries a ``candidate`` section. It is refused outside 0..15 before any
+    output is staged.
     """
+    if flag2_passability is not None and (
+            isinstance(flag2_passability, bool)
+            or not isinstance(flag2_passability, int)
+            or not (0 <= flag2_passability <= 15)):
+        raise PorPipelineError("candidate flag-2 passability must be an integer 0..15")
     if not install.is_dir():
         raise PorPipelineError("install folder not found")
     out = Path(out)
@@ -863,8 +938,8 @@ def run(install: Path, out: Path, plan: Optional[Path], *,
     try:
         created.extend(_make_dirs(parent))
         staging = Path(tempfile.mkdtemp(prefix=STAGE_PREFIX, dir=str(parent)))
-        blocks = stage_blocks(install, staging)
-        designs = stage_designs(install, staging, designs_plan)
+        blocks = stage_blocks(install, staging, flag2_passability)
+        designs = stage_designs(install, staging, designs_plan, flag2_passability)
         ecl = stage_ecl_text(install, staging) if with_ecl_text else None
 
         manifest = {
@@ -877,8 +952,10 @@ def run(install: Path, out: Path, plan: Optional[Path], *,
             "blocks": blocks,
             "designs": designs,
             "summary": _summary(blocks, designs),
-            "unsupported": UNSUPPORTED,
+            "unsupported": unsupported_list(flag2_passability),
         }
+        if flag2_passability is not None:
+            manifest["candidate"] = candidate_block(flag2_passability)
         if ecl is not None:
             manifest["ecl_text"] = ecl
         (staging / "por_pipeline.json").write_text(
@@ -921,10 +998,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--with-ecl-text", action="store_true",
                     help="also run the ECL string census and the unaccepted 6-bit "
                          "diagnostic over ECL1..8.DAX (requires all eight)")
+    ap.add_argument("--candidate-flag2-passable", type=int, default=None, metavar="N",
+                    help="OPT-IN CANDIDATE ONLY (default: off): encode door flag 2 as "
+                         "OpenUA passability N (0..15) instead of 15 in every map and "
+                         "design this run writes. Door 3 stays unresolved.")
     args = ap.parse_args(argv)
     try:
         manifest, code = run(args.install, args.out, args.plan,
-                             with_ecl_text=args.with_ecl_text)
+                             with_ecl_text=args.with_ecl_text,
+                             flag2_passability=args.candidate_flag2_passable)
     except (PorPipelineError, PorSourceError, pm.PorMapError, GeoError) as exc:
         print("por_pipeline: error: %s" % exc, file=sys.stderr)
         return 2
@@ -939,6 +1021,10 @@ def main(argv: Optional[list[str]] = None) -> int:
               "%d diagnostic frames (none accepted)"
               % (e["status"], e["census"]["exit"], sum(e["census"]["string_frames_by_framing"].values()),
                  e["diagnostic"]["frames_total"]))
+    if "candidate" in manifest:
+        print("por_pipeline: OPT-IN CANDIDATE: flag 2 as passability %d (default 15); "
+              "not verified, not the default, playable=false"
+              % manifest["candidate"]["flag2_passability"])
     print("por_pipeline: wrote %s and %s" % (args.out / "por_pipeline.json",
                                            args.out / "por_pipeline_report.md"))
     return code

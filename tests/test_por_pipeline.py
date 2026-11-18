@@ -517,8 +517,8 @@ def test_mutation_during_map_stage_publishes_nothing(tmp_path, monkeypatch):
     install = make_full_install(tmp_path)
     real_blocks = pp.stage_blocks
 
-    def blocks_then_touch(inst, staging):
-        rows = real_blocks(inst, staging)
+    def blocks_then_touch(inst, staging, *rest):
+        rows = real_blocks(inst, staging, *rest)
         (install / "POOLRAD" / "GEO3.DAX").write_bytes(b"changed during the map stage")
         return rows
 
@@ -557,8 +557,8 @@ def test_refusal_leaves_existing_out_byte_identical(tmp_path, monkeypatch, stage
     if stage == "map":
         real_blocks = pp.stage_blocks
 
-        def mutate_blocks(inst, staging):
-            rows = real_blocks(inst, staging)
+        def mutate_blocks(inst, staging, *rest):
+            rows = real_blocks(inst, staging, *rest)
             (install / "POOLRAD" / "GEO5.DAX").write_bytes(b"x" * 9)
             return rows
         monkeypatch.setattr(pp, "stage_blocks", mutate_blocks)
@@ -765,8 +765,8 @@ def test_two_area_design_is_one_folder_with_two_round_tripped_geos(tmp_path):
     raw6 = (dsn / "GEO006.DAT").read_bytes()
     g5, g6 = Geo.parse(raw5), Geo.parse(raw6)
     assert g5.build() == raw5 and g6.build() == raw6
-    assert g5.entry_point(0) == (5, 3, 2)     # area 5: entry [3,5] facing east
-    assert g6.entry_point(0) == (2, 1, 4)     # area 6: entry [1,2] facing south
+    assert g5.entry_point(0) == (3, 5, 2)     # row=x, col=y; entry [3,5], east
+    assert g6.entry_point(0) == (1, 2, 4)     # row=x, col=y; entry [1,2], south
     # Standalone map reports are still written for every source block.
     assert len(list((out / "maps").iterdir())) == 8
     assert manifest["summary"]["blocks_decoded"] == 8

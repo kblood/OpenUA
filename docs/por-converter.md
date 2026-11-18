@@ -231,13 +231,22 @@ synthetic; no live PoR input, screen or memory capture has been performed with i
 
 ## Pipeline run (`tools/por_pipeline.py`)
 
-**Status: map-only pipeline, plus an optional ECL text diagnostic. `playable: false`.**
+**Status: map-only pipeline, plus an optional ECL text diagnostic and an explicit
+flag-2 experiment option. `playable: false`.**
 One run over a user-supplied install. It fingerprints the members it depends on,
 decodes every GEO block, round-trips any planned design, runs the loader-equivalent
 host checks on each emitted `NAME.DSN` folder, and writes a manifest.
 With `--with-ecl-text` it also runs the ECL string census and the
 diagnostic-unaccepted 6-bit decode over ECL1..ECL8. Neither stage runs the game,
 binds art, or makes a string accepted text.
+
+The optional `--candidate-flag2-passable N` setting (0..15, default off) applies
+N to flag-2 walls in normalized maps and planned flat or grouped designs. The
+manifest and report label it as an unverified opt-in candidate, and `playable`
+remains false. One cited PoR runtime route supports interaction-gated crossing
+for a flag-2 edge; the GEO-to-reader binding and general flag-2 rule remain
+unproven. Door 3 remains unchanged at passability 15 and unresolved. Omitting
+the option adds no candidate metadata.
 
 ### Usage
 
@@ -258,6 +267,12 @@ python3 tools/por_pipeline.py --install "G:/Games/Pool of Radiance" \
   census with diagnostics; the manifest is still written); `2` named refusal
   (missing or ambiguous member, including any `ECL1..8.DAX` with
   `--with-ecl-text`; bad plan; unsafe output; install changed during the run).
+
+Explicitly enable the candidate for a planned run with:
+
+```sh
+python3 tools/por_pipeline.py --install "G:/Games/Pool of Radiance" --plan plan.json -o data/work/por-pipeline/flag2-candidate --candidate-flag2-passable 2
+```
 
 ### Multi-area designs (map-only)
 
@@ -480,7 +495,8 @@ Full notes and limits: [`por-geo-all-map-group.md`](por-geo-all-map-group.md).
   plan from the pinned retail install with one `14,10,west` test position, then
   ran the current pipeline. It decoded 29/29 blocks; the grouped design passed
   loader-equivalent checks with 29 files of 12,962 bytes. Parsing them back
-  yields `(row=10,col=14,facing=6)` in each. Area ids and start area remain
+  yields `(row=14,col=10,facing=6)` in each (source x maps to OpenUA row; source
+  y maps to column). Area ids and start area remain
   invented placeholders; this does not establish authentic mappings or
   playability. Output: `data/work/por-pipeline-retail-20261118/pipeline/`.
 - **Bounded Hatari parse run (run-e, 2026-11-17).** A separate `FRUA_AREATEST`
