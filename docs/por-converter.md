@@ -125,10 +125,14 @@ cross-checks only; none of them is used as a PoR fact.
   VROOMM routine that reads the GEO selector and calls an unresolved loader-shaped
   target. A follow-up entry walk found START's DOS open helper and four DOS read
   sites, but did not connect them to an 8X8D archive; the five unresolved DOS-call
-  AH sites and far-call image model remain open. No 8X8D caller, file handle, or DAX
-  block read is established. This is a bounded negative, not evidence that PoR never
-  reads 8X8D or that these routines cannot run. See
-  [`por-8x8d-dos-sites-probe.md`](por-8x8d-dos-sites-probe.md).
+  AH sites and far-call image model remain open. A subsequent direct-jump and
+  indirect-transfer census still finds no established caller of START `0x7245`,
+  stub `0x42DE`, GAME.OVR `0x32270`, or the open-chain root `0x0A728`; indirect
+  table slots remain unlinked. No 8X8D caller, file handle, or DAX block read is
+  established. This is a bounded negative, not evidence that PoR never reads 8X8D
+  or that these routines cannot run. See
+  [`por-8x8d-dos-sites-probe.md`](por-8x8d-dos-sites-probe.md) and
+  [`por-8x8d-entry-call-probe.md`](por-8x8d-entry-call-probe.md).
 - **Group-29 WALLDEF target** (`tools/por_wall_group29_target_probe.py`, see
   [`por-wall-group29-target-probe.md`](por-wall-group29-target-probe.md)). The one
   runtime run observed a `0x2E8F7` seek and `0x120B`-byte read. The `33E7:05FD`

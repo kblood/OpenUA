@@ -65,8 +65,9 @@ Evidence labels used below:
   pop ds; ret`. Sets ES:DI to the frame buffer, then calls the helper.
 - **`0x0A80B` (E8 from `0x0A742`, inside `0x0A728`).** Contains `mov ah,30h; int 21h` (decoded) before the
   helper call at `0x0A841`, and a `\`-handling test (`cmp 0x5C; jnz`). Its helper call is the path-building form.
-- **`0x0A86A` (no decode-verified E8 callers; tier B).** A copy loop that compares against `:` (`0x3A`) and `\`
-  (`0x5C`), stores `\`, and then calls the helper at `0x0A895`. The shape is a DOS directory-path copy.
+- **`0x0A86A` is an inner label, not a separate entry.** The path-copy loop that compares against `:` (`0x3A`) and `\`
+  (`0x5C`), stores `\`, and then calls the helper at `0x0A895` is in the E8-entered body at `0x0A846`. The
+  entry-call census follows its same-body branches; see [`por-8x8d-entry-call-probe.md`](por-8x8d-entry-call-probe.md).
 
 ### The overlay-open routine: `0x0A728` (prologue, prologue-entered)
 
@@ -147,7 +148,7 @@ Census depth is limited to 3 caller levels with a node budget of 40. It was not 
        <- E8 0x0A806  0x0A89E  open helper, INT 21h AH=3Dh at 0x0A8B6
   <- E8 0x0A742  0x0A80B (DOS version check, path form)
        <- E8 0x0A841  0x0A89E
-0x0A86A (path copy loop, tier B)                   callers: none (E8)
+0x0A846 (path-copy body; 0x0A86A is an inner label) callers: E8 from 0x0A747
   -> E8 0x0A895  0x0A89E
 0x0A97E (reads 0x0A9B5, 0x0A9D6)                  callers: none (E8)
 0x0B2D5 (retf, tier B) <- E8 0x0B2DD  0x0B306 (reads 0x0B333)
