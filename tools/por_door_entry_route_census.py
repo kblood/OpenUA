@@ -17,6 +17,13 @@ Address models. Far targets are reported under both models that earlier probes u
 Raw census. Undecoded `E8`/`E9`/`EB`/`9A`/`EA` byte patterns that land on a tagged target are reported in
 `raw_hits`. They are never counted as routes: a byte pattern is not an instruction start.
 
+Supplementary candidate root. GAME.OVR 0x0A087 (a Borland prologue, `55 89 E5`, 6 bytes after group
+0x09807 proc[1]) is reported under `candidate_roots` with evidence `supplementary-candidate-root` and label
+`candidate-only`. It is a candidate entry, not established reachable or run code. Its walk uses the same
+`lh.walk`. Every instruction start is checked against the baseline decoded set: an instruction already
+there is `in_baseline`, and only distinct new instruction starts are counted as new. The baseline
+`decoded_transfers`, `raw_hits`, `verdicts` and counts are not changed by this root.
+
 Pins. GAME.OVR and START.EXE must match their pinned size and SHA-256 or the run is refused. Both are
 re-hashed after the run. Output is written only under data/work, outside the install.
 
@@ -65,6 +72,13 @@ NAMED = {CLEARER: "clearer-0x166CB", WRITER: "writer-0x167D4", READER: "reader-0
 # Sites already reported as callers by the caller probe (near E8 into the writer or clearer). A tagged
 # decoded transfer outside this set is a new route for this census.
 PRIOR_SITES = {0x16B5C, 0x16B9A, 0x16C28, 0x16C66, 0x17558, 0x17697}
+
+# Supplementary candidate root. Not baseline: it is reported beside the baseline, never merged into it.
+CANDIDATE_ROOT = 0x0A087
+CANDIDATE_GROUP = 0x09807
+CANDIDATE_PROLOGUE = bytes([0x55, 0x89, 0xE5])
+CANDIDATE_EVIDENCE = "supplementary-candidate-root"
+CANDIDATE_LABEL = "candidate-only"
 
 TRANSFER_FLOWS = ("call", "jmp")
 FAR_FLOWS = ("call_far", "jmp_far")
@@ -160,6 +174,74 @@ def raw_rows(data: bytes, decoded: set[int], hdr: int, body_lo: int, body_hi: in
     return out
 
 
+def candidate_transfer_rows(data: bytes, insns: dict[int, lh.Insn], hdr: int, body_lo: int, body_hi: int,
+                            base_decoded: set[int]) -> list[dict]:
+    """Every decoded transfer of a candidate walk, near and far, far under both models. Tags may be empty."""
+    rows = []
+    for at in sorted(insns):
+        ins = insns[at]
+        in_base = at in base_decoded
+        if ins.flow in TRANSFER_FLOWS and ins.target is not None:
+            t = ins.target
+            rows.append({"at": at, "flow": ins.flow, "kind": "near", "target": t,
+                         "tags": tags_for(t, body_lo, body_hi),
+                         "target_prologue": 0 <= t < len(data) and data[t:t + 3] in dc.PROLOGUES,
+                         "in_baseline": in_base})
+        elif ins.flow in FAR_FLOWS and ins.far is not None:
+            seg, off = ins.far
+            for model, t in far_targets(seg, off, hdr).items():
+                rows.append({"at": at, "flow": ins.flow, "kind": "far", "model": model, "seg": seg, "off": off,
+                             "target": t, "tags": tags_for(t, body_lo, body_hi), "in_baseline": in_base})
+    return rows
+
+
+def candidate_root(ovr: bytes, hdr: int, body_lo: int, body_hi: int, base_decoded: set[int]) -> dict:
+    """The supplementary candidate entry GAME.OVR 0x0A087. Candidate only; see the module docstring.
+
+    A prologue mismatch refuses the walk (no rows). Otherwise the walk is lh.walk from the root, and each
+    instruction start is classed against the baseline decoded set. Counts are distinct instruction starts,
+    so one far call tagged under both models is one instruction.
+    """
+    head = ovr[CANDIDATE_ROOT:CANDIDATE_ROOT + 3]
+    doc = {
+        "entry": "0x%05X" % CANDIDATE_ROOT, "entry_file": CANDIDATE_ROOT,
+        "evidence": CANDIDATE_EVIDENCE, "label": CANDIDATE_LABEL,
+        "group_fileofs": "0x%05X" % CANDIDATE_GROUP, "group_relative": "0x%04X" % (CANDIDATE_ROOT - CANDIDATE_GROUP),
+        "expected_prologue": CANDIDATE_PROLOGUE.hex(), "prologue": head.hex(),
+        "prologue_match": head == CANDIDATE_PROLOGUE,
+    }
+    if not doc["prologue_match"]:
+        doc.update({"status": "refused-prologue-mismatch", "walk": None, "transfer_candidates": [],
+                    "route_rows": [], "new_instruction_count": 0, "new_route_instructions": [],
+                    "in_baseline_route_rows": 0})
+        return doc
+    w = lh.walk(ovr, CANDIDATE_ROOT)
+    insns = decoded_map(ovr, [w])
+    starts = set(insns)
+    last = max(insns)
+    rows = candidate_transfer_rows(ovr, insns, hdr, body_lo, body_hi, base_decoded)
+    route = [r for r in rows if r["tags"]]
+    new_route = sorted({r["at"] for r in route if not r["in_baseline"]})
+    doc.update({
+        "status": "walked",
+        "walk": {
+            "instruction_count": w["instruction_count"], "complete": w["complete"],
+            "incomplete": w["incomplete"], "overlap_conflicts": w["overlap_conflicts"],
+            "span": [CANDIDATE_ROOT, last + insns[last].length],
+            "near_calls": [{"at": c["at"], "target": c["target"], "in_baseline": c["at"] in base_decoded}
+                           for c in w["near_calls"]],
+            "far_calls": [{"at": c["at"], "seg": c["seg"], "off": c["off"], "in_baseline": c["at"] in base_decoded}
+                          for c in w["far_calls"]],
+        },
+        "transfer_candidates": rows,
+        "route_rows": route,
+        "new_instruction_count": len(starts - base_decoded),
+        "new_route_instructions": new_route,
+        "in_baseline_route_rows": sum(1 for r in route if r["in_baseline"]),
+    })
+    return doc
+
+
 def analyse(ovr: bytes, start: bytes) -> dict:
     hdr = fr.mz_image_base(start)
     scan = fr.scan_all(start, ovr)
@@ -203,7 +285,10 @@ def analyse(ovr: bytes, start: bytes) -> dict:
                           if r["kind"] == "near" and r["flow"] == "call"
                           and not r["target_prologue"] and "group-0x166CB-body" in r["tags"]]
 
+    cand = candidate_root(ovr, hdr, body_lo, body_hi, ovr_decoded)
+
     return {
+        "candidate_roots": [cand],
         "groups_checked": len(allg),
         "group_0x166CB": {"fileofs": "0x%05X" % body_lo, "codesz": "0x%04X" % grp["codesz"]},
         "decoded_starts": {"GAME.OVR": len(ovr_decoded), "START.EXE": len(start_decoded)},
@@ -239,6 +324,8 @@ def probe(install: Path) -> dict:
             "M0 and M1 are unproven; they are reported, not promoted.",
             "Raw byte hits are reported and never counted.",
             "Door semantics: the writer and clearer bodies are not read here.",
+            "Candidate root GAME.OVR 0x0A087 is candidate-only: not shown reachable or run, and not baseline.",
+            "The baseline walk set already decodes 0x0A087 (a prologue sweep of group 0x09807).",
         ],
     })
     return doc
@@ -271,6 +358,26 @@ def render_report(doc: dict) -> str:
     for r in doc["raw_hits"]:
         lines.append("- %s 0x%05X %s %s -> 0x%05X %s" % (r["image"], r["at"], r["op"], r["kind"], r["target"],
                                                         ", ".join(r["tags"])))
+    lines += ["", "## Supplementary candidate roots (not baseline; candidate-only)", ""]
+    for c in doc["candidate_roots"]:
+        lines.append("- %s %s, evidence %s, label %s, prologue %s (match %s), status %s" % (
+            c["entry"], "group " + c["group_fileofs"] + " +" + c["group_relative"], c["evidence"], c["label"],
+            c["prologue"], c["prologue_match"], c["status"]))
+        if c["status"] != "walked":
+            continue
+        wk = c["walk"]
+        lines.append("  - walk: %d instructions, complete %s, span 0x%05X..0x%05X" % (
+            wk["instruction_count"], wk["complete"], wk["span"][0], wk["span"][1]))
+        lines.append("  - new instruction starts beyond baseline: %d; in-baseline route rows: %d" % (
+            c["new_instruction_count"], c["in_baseline_route_rows"]))
+        for nc in wk["near_calls"]:
+            lines.append("  - near call 0x%05X -> 0x%05X (in baseline: %s)" % (nc["at"], nc["target"], nc["in_baseline"]))
+        for fc in wk["far_calls"]:
+            lines.append("  - far call 0x%05X -> %04X:%04X (in baseline: %s)" % (
+                fc["at"], fc["seg"], fc["off"], fc["in_baseline"]))
+        for r in c["route_rows"]:
+            lines.append("  - route row 0x%05X %s %s -> 0x%05X %s (in baseline: %s)" % (
+                r["at"], r["flow"], r.get("model", r["kind"]), r["target"], ", ".join(r["tags"]), r["in_baseline"]))
     lines += ["", "## Not established", ""] + ["- " + s for s in doc["not_established"]] + [""]
     return "\n".join(lines)
 

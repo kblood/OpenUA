@@ -201,9 +201,12 @@ cross-checks only; none of them is used as a PoR fact.
 - **Plane-3 writer trigger** (`tools/por_door_entry_route_census.py`, see
   [`por-door-entry-route-census.md`](por-door-entry-route-census.md)). The bounded
   decoded-transfer census finds no new route to stub 1 or to the writer/clearer;
-  only the six previously known near calls reach the latter two. Four walks stop
-  at unsupported opcodes and data-driven dispatch remains outside the census, so
-  the trigger and general door semantics remain unresolved.
+  only the six previously known near calls reach the latter two. The four stop
+  records are classified as text, an operand, an out-of-range proc entry, or
+  fall-through into stub data, so no decoder extension is justified. Candidate
+  root `0x0A087` adds no transfer rows. Unknown group proc entries, unwalked bytes and data-driven
+  dispatch remain outside the census; the trigger and general door semantics
+  remain unresolved.
 
 The module is still map-only and unplayable. Area and start mapping are unknown, and
 events, text, art and campaign behaviour are absent.

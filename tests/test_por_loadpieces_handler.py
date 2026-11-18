@@ -83,6 +83,55 @@ def test_decoder_refuses_unsupported_and_truncated():
     assert exc.value.reason == "truncated"
 
 
+def test_stop_bytes_from_the_door_route_census_are_refused():
+    # The four decode stops named by docs/por-door-entry-route-census.md. The decoder is an
+    # 8086/80186 table; these encodings are outside it, and the decoder must keep refusing them.
+    # Falsifiers: the refusal is per encoding, not a blanket refusal of the 0x64-0x67, 0xFE or
+    # 0x0F families (FE /0 and FE /1 still decode below).
+    with pytest.raises(h.DecodeError) as exc:
+        dec("65 3a 55 89 e5")
+    assert exc.value.reason == "unsupported-opcode-0x65" and exc.value.off == 0
+    with pytest.raises(h.DecodeError) as exc:
+        dec("fe 16 57 c4")
+    assert exc.value.reason == "unsupported-fe-reg-2"
+    for modrm, reg in ((0x18, 3), (0x20, 4), (0x28, 5), (0x30, 6), (0x38, 7)):
+        with pytest.raises(h.DecodeError) as exc:
+            dec("fe %02x" % modrm)
+        assert exc.value.reason == "unsupported-fe-reg-%d" % reg
+    with pytest.raises(h.DecodeError) as exc:
+        dec("0f 00 b2 00 11")
+    assert exc.value.reason == "unsupported-opcode-0x0f"
+    assert dec("fe c0").name == "inc" and dec("fe c0").length == 2
+    assert dec("fe c8").name == "dec" and dec("fe c8").length == 2
+    # Other 386-only prefixes are refused by the same rule, not by a guessed decode.
+    for stop in ("64 90", "66 90", "67 90"):
+        with pytest.raises(h.DecodeError):
+            dec(stop)
+
+
+def test_linear_from_inside_ascii_text_stops_at_the_e_byte():
+    # The GAME.OVR entry at 0x0A081 is the ASCII text "attle:" (61 74 74 6c 65 3a), not code.
+    # The 0x65 byte is the 'e'. Linear decode runs popa, jz, insb, then stops at 0x65.
+    data = bytes.fromhex("61 74 74 6c 65 3a") + b"\x55\x89\xe5"
+    out, reason = h.linear(data, 0, 10, stop_on_ret=False)
+    assert [i.name for i in out] == ["popa", "jz", "insb"]
+    assert reason is not None and reason.startswith("unsupported-opcode-0x65")
+    assert "0x00004" in reason
+
+
+def test_walk_across_a_noreturn_call_far_falls_into_the_next_bytes():
+    # The START.EXE sweep from a real prologue ends in call far with no ret after it. The walker
+    # treats every call as returning, so it falls through into the bytes after the call. Here
+    # that is 0F 00 b2, which the decoder refuses at 0x0A.
+    body = bytes.fromhex("55 89 e5 31 c0 9a 00 00 00 00")
+    w = h.walk(body + bytes.fromhex("0f 00 b2"), 0)
+    assert {"code": "unsupported-opcode-0x0f", "at": 0x0A} in w["incomplete"]
+    assert any(r["at"] == 0x05 and r["flow"] == "call_far" for r in w["listing"])
+    # Falsifier: the same prefix with a ret after the call stops cleanly, with no incomplete row.
+    w_ok = h.walk(body + b"\xc3", 0)
+    assert w_ok["incomplete"] == []
+
+
 # ---- synthetic dispatcher and handler --------------------------------------
 
 def _rel16(site_end: int, target: int) -> bytes:

@@ -199,9 +199,14 @@ then checked decoded near jumps, far jumps, and transfers into non-prologue
 locations across the walked GAME.OVR groups and START.EXE image closure. It
 found no additional decoded transfer to stub 1, the writer or the clearer.
 The only decoded writer/clearer callers remain the six previously known near
-calls. This is a bounded negative: four walks stop at unsupported opcodes,
-group-external bytes are not decoded, and data-driven dispatch is not covered.
-It does not identify the writer/clearer trigger or change the door mapping.
+calls. A follow-up byte review classified all four census stops: three are
+mislocated or out-of-range proc entries, and the START stop is fall-through
+from a far call into stub bytes. None calls for extending the decoder. The
+candidate prologue at GAME.OVR `0x0A087` is already in the group sweep; its
+separately labelled candidate walk adds no route. Coverage remains bounded to
+walked entries and does not include group-external bytes, unknown proc entries,
+or data-driven dispatch. It does not identify the writer/clearer trigger or
+change the door mapping.
 
 ## Evidence class 3: OpenUA source-level movement behavior
 
@@ -369,10 +374,10 @@ would identify only a trigger path; it would not establish the writer's
 gameplay event. The reader branch effects are now decoded statically, but
 their input is not yet tied to a specific loaded GEO cell.
 
-The next static discriminator is to extend the decoder for the four unsupported
-opcode stops and re-run the route census. If that still finds no transfer, a
-data-driven trigger requires runtime memory evidence. Separately, establish the
-reader's live target and trace
+The next static discriminator is to resolve the group proc-entry model for the
+remaining out-of-range or non-prologue entries, then re-run the route census.
+If that still finds no transfer, a data-driven trigger requires runtime memory
+evidence. Separately, establish the reader's live target and trace
 its buffer back to the loaded GEO block, so its 2-bit return can be paired
 with the raw door flag. The writer's caller/event remains a separate open
 edge. The OpenUA-converted GEO2 block-20 flag-2 route should also be compared
