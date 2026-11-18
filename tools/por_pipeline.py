@@ -205,10 +205,10 @@ def unsupported_list(flag2_passability: Optional[int] = None) -> list[str]:
 
 def flag2_candidate_status(passability: int) -> str:
     if passability == 2:
-        return ("single-route runtime-tested: action accepted and crossing allowed; "
-                "tested edge remained passability 2 after crossing, so no opening "
-                "was observed; general mapping, GEO-reader binding and persistent "
-                "opening remain unproven; not default or a general rule")
+        return ("one OpenUA test run logged crossing allowed=1 with passability 2; "
+                "input action label and PoR parity are unverified; the tested edge "
+                "remained passability 2 after crossing; general flag-2 mapping and "
+                "GEO-reader binding remain unproven; not default or a general rule")
     return ("not runtime-tested; general mapping remains unproven; not default or a "
             "general rule")
 

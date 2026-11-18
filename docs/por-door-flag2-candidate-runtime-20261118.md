@@ -120,7 +120,8 @@ emitted 1/1 designs, and reported loader-equivalent `pass`. Its
 `B8C35F0F5F524CE077B78E517D0AB65809A966C2BC009444D68069E1DE191644`, exactly
 matching the transposed candidate fixture used by the successful Hatari run.
 This establishes repeatable production of the tested GEO bytes. The current
-manifest marks passability 2 `single-route runtime-tested`, links this evidence
+manifest records that one OpenUA test run logged `allowed=1` for passability 2,
+marks the input action label and PoR parity unverified, links this evidence
 document, and still says `runtime_loaded: false` and `engine_executed: false`;
 the runtime result below comes from a separate Hatari run.
 

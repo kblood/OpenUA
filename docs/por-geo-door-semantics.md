@@ -27,16 +27,19 @@ door" without a PoR check.
 
 ## PoR original-game runtime observation (flag 2)
 
-The read-only GoldBox reference contains a reproducible DOSBox-X trace of the
+The read-only GoldBox reference describes a DOSBox-X trace of the
 Pool of Radiance DOS executable in
 `docs/engine/research/gen1-dosbox-runtime-trace.md`, sections dated 2026-07-22.
 It records a party facing west at `(14,10)` in `GEO2.DAX` block 20. The edge
 has wall slot 10 and observed plane-3/door flag 2. The native game displays
 `LOCKED. BASH PICK EXIT`. A Pick attempt fails in one recorded attempt and
-leaves the party in place; a subsequent Bash succeeds, moves the party to
-`(13,10)`, and persists the opened edge. The trace then reaches descriptor 3
-and native COMBAT. The GoldBox files were used read-only; this is PoR DOS
-runtime evidence, not a CoK rule.
+leaves the party in place; a subsequent Bash succeeds and moves the party to
+`(13,10)`. The note also reports that the original persisted the opened edge,
+but the post-crossing wall sample listed below is at the destination cell, not
+a direct readback of source edge `(14,10)` west. Persistence is therefore a
+reported claim, not independently verified by the evidence available here.
+The trace then reaches descriptor 3 and native COMBAT. The GoldBox files were
+used read-only; this is PoR DOS runtime evidence, not a CoK rule.
 
 This supports the concrete observation that this flag-2 route is not an
 unconditional open edge and that a successful interaction permits crossing.
@@ -51,14 +54,16 @@ GEO block. It also does not say anything about flag 3.
   wall 10, raw descriptor `0x00`, ECL cursor `0x9975`. The first frame shows
   `LOCKED. BASH PICK EXIT`.
 - After `B` (Bash succeeded, no memory write) the party is at `(13,10)` facing
-  west, wall 0, raw descriptor `0x83`, ECL cursor `0x9FD5`. The original
-  executable moved the party and persisted the edge.
+  west, wall 0, raw descriptor `0x83`, ECL cursor `0x9FD5`. This records the
+  destination cell's current wall sample; it is not the source cell's
+  `(14,10)` west edge after crossing.
 - In a separate clean run, `P` (Pick) was consumed and failed its random check;
   the party stayed at `(14,10)`. A stalled automation run produced no gameplay
   artifacts and is not negative evidence.
 - The GoldBox note names the proof directory
-  `build/dosbox-x-pool-route-hostregs-20260722-c`. That tree lives in the
-  read-only GoldBox checkout and was not inspected for this note.
+  `build/dosbox-x-pool-route-hostregs-20260722-c`. That directory is not
+  present in the current GoldBox checkout, so its underlying captures were not
+  independently inspected here.
 - The same note cites the original Gen1 movement contract (`ovr015.locked_door`)
   as reading flag 2 as a Bash/Pick/Knock prompt. That is a static citation from
   the GoldBox note, not re-read here. It does not cover flag 3 or the reader
@@ -230,8 +235,9 @@ refuses menu-coded nibbles; the forward-play path calls
 The low nibble is the wall texture group; it plays no part in passability.
 The test-only runtime cross-check below confirms that an authored edge byte
 with high nibble 15 reaches this forward interaction path. OpenUA does not yet
-persist a successfully opened edge as the PoR DOS trace does; the current Bash
-path only reports success to the movement gate. The other movement keys use
+persist a successfully opened edge; the current Bash path only reports success
+to the movement gate. The GoldBox note reports native persistence, but its
+available post-crossing sample does not read back the source edge. The other movement keys use
 the menu-less gate and refuse these menu-coded edges.
 
 ## Evidence class 4: OpenUA test-only runtime cross-check (2026-11-18)
@@ -336,14 +342,17 @@ the CoK distinction must not be promoted.
 
 `tools/por_map.py` reports a separate flag-2 `locked` rule and flag-3
 `door3-unresolved` rule. The default per-edge value is `0xF0 | slot` for
-both flags; the opt-in flag-2 passability-2 value is `0x20 | slot`. The
-runtime-verified edge order and entry heading place the tested value on the
-edge selected by OpenUA. Each rule carries
+both flags; the opt-in flag-2 passability-2 value is `0x20 | slot`. The current
+candidate edge order and entry heading place the tested value under OpenUA's
+facing lookup for the same route; this is not independent validation of the
+source labels or transform. Each rule carries
 provenance in `RULE_EVIDENCE`, which is written to `por_map.json` as
 `edge_mapping_evidence.rules` and shown as a status tag in the report:
 
-- `locked`: basis `por-runtime-single-route`, status `supported-single-route`.
-  Its PoR runtime field records the one GEO2 block 20 route.
+- `locked`: basis `reported-por-runtime-single-route`, status
+  `reported-single-route`. Its PoR runtime field records the one GEO2 block 20
+  route as described in the GoldBox note; source-edge persistence is not
+  independently verified.
 - `door3-unresolved`: basis `other-title-hypothesis (CoK)`, status
   `provisional`, no PoR runtime observation.
 - `open`, `solid`, `auto-door`: basis `assumption`, status

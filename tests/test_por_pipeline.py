@@ -107,16 +107,16 @@ def test_flag2_candidate_manifest_limits_runtime_claim_to_passability_two(tmp_pa
     assert tested["candidate"]["opt_in"] is True
     assert tested["candidate"]["default"] is False
     assert tested["candidate"]["playable"] is False
-    assert "single-route runtime-tested" in tested["candidate"]["status"]
-    assert "no opening was observed" in tested["candidate"]["status"]
-    assert "persistent opening remain unproven" in tested["candidate"]["status"]
+    assert "one OpenUA test run logged crossing allowed=1" in tested["candidate"]["status"]
+    assert "input action label and PoR parity are unverified" in tested["candidate"]["status"]
+    assert "remained passability 2 after crossing" in tested["candidate"]["status"]
     assert tested["candidate"]["evidence_doc"] == "docs/por-door-flag2-candidate-runtime-20261118.md"
     door_line = next(x for x in tested["unsupported"] if x.startswith("Door mapping:"))
-    assert "passability 2" in door_line and "single-route runtime-tested" in door_line
+    assert "passability 2" in door_line and "one OpenUA test run logged crossing allowed=1" in door_line
     assert "general flag-2 rule remain unproven" in door_line
     assert tested["designs"][0]["loader_equivalent"]["runtime_loaded"] is False
     report = (tmp_path / "pass2" / "por_pipeline_report.md").read_text(encoding="utf-8")
-    assert "single-route runtime-tested" in report and "playable: false" in report
+    assert "one OpenUA test run logged crossing allowed=1" in report and "playable: false" in report
 
     untested, code = pp.run(install, tmp_path / "pass3", plan, flag2_passability=3)
     assert code == 0
@@ -1109,10 +1109,10 @@ CAND_MD = "por_ecl_candidate_strings_report.md"
 PRE_CHANGE_GOLDEN = {
     "map-only": {"json": "e39b88868f76519280be1f7163645d4d115ab5e1055e5bdef072156cfda20631",
                  "report": "4baa581135b83f3d5f8b52e42b67d0dce49b0d37515c4784846d6e833b1bdc88",
-                 "tree": "7ff8055cf31aa832b77909f789c01a227a4790cdd7780a29b79e6001c5a33c52"},
+                 "tree": "63d640111f684a9348b82ecdbe8e86523b6740346ada68ac9fea825dc870b0b8"},
     "ecl-text": {"json": "8e941c2a73ba46c73102eb0759e0b355edbef87dee06471209e3b572629aac03",
                  "report": "75712d8ccee1335f64be619ac00aa7908912e5c3373e049b711f962fc7501bbe",
-                 "tree": "74d7f36943322c11133804cea41836352fa6a28cc5c9ec29817daad0bfd33c91"},
+                 "tree": "48d6724f536f6c5dcd6a3fc4b025cb7e41261732509f2bbad13c09c89506c109"},
 }
 
 

@@ -20,11 +20,14 @@ behaviour.
 
 ## Question
 
-The PoR DOS runtime trace (cited from the read-only GoldBox note, see
+The PoR DOS runtime trace (reported in the read-only GoldBox note, see
 [por-geo-door-semantics.md](por-geo-door-semantics.md#por-original-game-runtime-observation-flag-2))
 records a party facing west at `(14,10)` in `GEO2.DAX` block 20. The edge is
-wall slot 10 with flag 2. The native game shows `LOCKED. BASH PICK EXIT`. A
-successful Bash moves the party to `(13,10)` and persists the opened edge.
+wall slot 10 with flag 2. The native game is reported to show
+`LOCKED. BASH PICK EXIT`. A successful Bash is reported to move the party to
+`(13,10)`. The GoldBox note says the edge persisted, but the available
+post-crossing sample is at the destination cell and is not a readback of source
+edge `(14,10)` west; persistence is not independently verified here.
 
 Question for OpenUA: does the generated GEO edge reach the engine's
 passability-15 "Blocked:" menu, and, if input is possible, does Bash move the

@@ -76,10 +76,10 @@ def _changed_walls(a: Geo, b: Geo):
 
 # ---- default: byte-identical golden, no candidate key anywhere ------------------
 
-# Pinned on the pipeline with the verified row=x/col=y entry-point check,
+# Pinned on the pipeline with the one-route-fit row=x/col=y candidate,
 # candidate absent; CRLF-normalized. The earlier baseline marked correct
 # transposed entries failed because _round_trip expected (y,x).
-GOLDEN_DEFAULT_TREE = "26623d0227b305fbb616db1a210bf94190f18f4504ffde06bd98500020ef90be"
+GOLDEN_DEFAULT_TREE = "84738bdc7411340276e405558b2c879758fc6087e7419cc3a460a3c2a88d47d5"
 GOLDEN_DEFAULT_MANIFEST = "86a52670abe322901b798430e79fc29e575d6801a74df840c83ec0ccf4ebd5e5"
 
 
@@ -120,7 +120,11 @@ def test_candidate_is_recorded_on_manifest_and_every_row(tmp_path):
                     "rule": "locked", "door": 2, "flag2_passability": 2,
                     "default_flag2_passability": 15, "door3_passability": 15,
                     "door3_status": "unresolved",
-                    "status": "opt-in candidate; not verified; not promoted to default"}
+                    "evidence_doc": "docs/por-door-flag2-candidate-runtime-20261118.md",
+                    "status": ("one OpenUA test run logged crossing allowed=1 with passability 2; "
+                               "input action label and PoR parity are unverified; the tested edge "
+                               "remained passability 2 after crossing; general flag-2 mapping and "
+                               "GEO-reader binding remain unproven; not default or a general rule")}
     assert manifest["playable"] is False
     assert all(b["flag2_candidate"] == 2 for b in manifest["blocks"] if b["status"] == "decoded")
     flat, grouped = manifest["designs"]

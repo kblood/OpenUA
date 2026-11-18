@@ -775,39 +775,43 @@ observed flag-2 case from the unresolved flag-3 mapping.
 | slot 0 (any door) | `0x00` | open |
 | slot S, door 0 | `0xE0 \| S` | solid wall, texture group S |
 | slot S, door 1 | `0x10 \| S` | passable secret-door edge (engine says "A SECRET DOOR!") |
-| slot S, door 2 | default `0xF0 \| S`; opt-in passability 2 gives `0x20 \| S` | OpenUA Blocked action; one pipeline-emitted route crossed after action index 0 was accepted |
+| slot S, door 2 | default `0xF0 \| S`; opt-in passability 2 gives `0x20 \| S` | one OpenUA test build crossed with `allowed=1`; action label and PoR parity are unverified |
 | slot S, door 3 | `0xF0 \| S` | same current byte, but unresolved for PoR; CoK-only Bash/Knock hypothesis |
 
 The texture group S is the Gen1 slot used unchanged. That is **not verified**
 against PoR's WALLDEF art. Door flags 2 and 3 have distinct diagnostic labels
-(`locked`, status `supported-single-route`; `door3-unresolved`, status
+(`locked`, status `reported-single-route`; `door3-unresolved`, status
 `provisional`). By default they emit the same byte; the opt-in passability-2
 candidate changes only flag-2 bytes. In its tested route the edge stayed at
-passability 2 after crossing, so no opening was observed. Per-rule provenance is in
+passability 2 after crossing, so no opening was observed. The cited native note
+reports persistence, but the available post-crossing sample is at the destination
+cell and does not verify the source-edge value. Per-rule provenance is in
 `por_map.json` under `edge_mapping_evidence.rules`. Every rule keeps
 `geo_reader_binding: unproven` and `general_rule_proven: false`. The per-cell
 descriptor and zone bits are not written.
 
-### Coordinate and wall mapping (runtime-supported for one route)
+### Coordinate and wall mapping (one-route fit; not independently validated)
 
 The flag-2 runtime comparison found an axis mismatch in the first generated
 fixture. With source cell `(14,10)` placed at OpenUA `cell(col=14,row=10)`, a
 west-facing step was allowed but landed at `(9,14)` in OpenUA coordinates. A
 second run used the same binary and wall bytes, transposing only the GEO cell
 grid and entry point. It started at `(14,10)` and landed at `(13,10)`, matching
-the recorded PoR route. The converter now maps PoR source x to OpenUA row and
+the recorded PoR route. The transpose was selected after the direct mismatch
+and checked against that same route, so it is a one-route fit rather than an
+independent coordinate validation. The converter maps source x to OpenUA row and
 source y to OpenUA column: `cell(col=y,row=x)` and
 `set_entry_point(0,row=x,col=y,facing)`. The retail route and two disposable
 OpenUA logs are documented in
 [`por-door-flag2-candidate-runtime-20261118.md`](por-door-flag2-candidate-runtime-20261118.md).
 
-This is runtime evidence for one route, not a claim that every axis-dependent
-feature has been checked. Source edge labels remain N/E/S/W, and the writer
-keeps wall bytes in N/E/S/W order. The test route confirms that the recorded
-west edge is selected for the facing-6 interaction after the cell transform.
+This is one runtime route consistent with the current transform, not independent
+validation of every axis-dependent feature. Source edge labels remain N/E/S/W,
+and the writer keeps wall bytes in N/E/S/W order. The selected transform places
+the tested west edge under the facing-6 interaction in that same route.
 The plane-3 probe establishes only that direction code 6 selects bits 6-7; it
 does not independently name all compass directions. `tests/test_por_map.py`
-pins the observed source-to-OpenUA transform and the GEO container round-trip.
+pins the current source-to-OpenUA candidate transform and the GEO container round-trip.
 
 Entry facings use OpenUA's 3-bit compass codes, not the four edge-order indices:
 N=0, E=2, S=4, W=6 (odd codes are diagonal headings). The engine normalizes 0
@@ -816,7 +820,7 @@ with `(dir & 6) >> 1`. A runtime trace of the test-only flag-2 area exposed two
 old fixture errors: the 0/1/2/3 facing codes sent cardinal labels to diagonal
 headings. Under the Gen1 source-label model, writing W/S/E/N put west at slot 0
 while the engine's west heading reads slot 3. `tools/por_map.py` now writes
-that model's N/E/S/W values in the runtime-verified OpenUA slot order and uses
+that model's N/E/S/W values in the slot order that matches the tested route, and uses
 the engine's cardinal heading codes. The PoR probe confirms the bit-pair
 selection by numeric direction code but does not independently verify those
 source compass labels. One assumption remains open:

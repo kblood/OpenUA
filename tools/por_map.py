@@ -232,22 +232,22 @@ def decode_gen1_geo(raw: bytes) -> list[dict]:
 # --------------------------------------------------------------------------
 
 # OpenUA passability nibble (dsn.py): 0 open, 1 secret door (passable, engine
-# says "A SECRET DOOR!"), 14 solid wall, 15 Blocked-menu edge. The PoR DOS
-# runtime trace records one flag-2 edge where Bash opened the way; the runtime
-# GEO-byte-to-reader link and a general flag rule remain unestablished. Flag 3
+# says "A SECRET DOOR!"), 14 solid wall, 15 Blocked-menu edge. The GoldBox PoR
+# trace note reports one flag-2 crossing after Bash; the runtime GEO-byte-to-
+# reader link and a general flag rule remain unestablished. Flag 3
 # remains a CoK-derived hypothesis. The low nibble is the wall texture group;
 # Gen1 slot is used unchanged (also unverified).
 MAP_RULES = {
     "open": "ASSUMPTION: slot 0: no wall, passable whatever the door byte says",
     "solid": "ASSUMPTION: wall, no door flag: solid wall (14)",
     "auto-door": "ASSUMPTION: wall + door 1 maps to passable secret-door (1)",
-    "locked": "one PoR DOS runtime route: wall + flag 2 stopped the party until a successful Bash; encoded as Blocked-menu edge (15); general flag-2 rule unproven",
+    "locked": "one GoldBox PoR DOS trace reports wall + flag 2 stopped the party until a successful Bash; encoded as Blocked-menu edge (15); GEO binding and general flag-2 rule unproven",
     "door3-unresolved": "no PoR runtime observation: wall + door 3 is a CoK/other-title Bash/Knock hypothesis; encoded as Blocked-menu edge (15) provisionally",
 }
 
 # Per-rule provenance, emitted with the normalized map. `basis` is where the
-# rule's meaning comes from; `por_runtime` is what the PoR DOS runtime showed.
-# Only `locked` has a PoR runtime observation, and that is one route. No rule
+# rule's meaning comes from; `por_runtime` records the one route reported in
+# the PoR DOS trace note. No rule
 # has its GEO-reader binding proven, and none sets por_door_rule_proven.
 RULE_EVIDENCE = {
     "open": {"basis": "assumption", "por_runtime": "none",
@@ -259,10 +259,12 @@ RULE_EVIDENCE = {
     "auto-door": {"basis": "assumption", "por_runtime": "none",
                   "status": "assumption-unverified",
                   "geo_reader_binding": "unproven", "general_rule_proven": False},
-    "locked": {"basis": "por-runtime-single-route",
+    "locked": {"basis": "reported-por-runtime-single-route",
                "por_runtime": ("GEO2 block 20 (14,10) west, flag 2: LOCKED. BASH PICK "
-                               "EXIT; one Pick failed; Bash succeeded; party moved to (13,10)"),
-               "status": "supported-single-route",
+                               "EXIT; one Pick failed; the GoldBox trace reports Bash success "
+                               "and movement to (13,10); persistence is not independently "
+                               "verified by the recorded destination-cell sample"),
+               "status": "reported-single-route",
                "geo_reader_binding": "unproven", "general_rule_proven": False},
     "door3-unresolved": {"basis": "other-title-hypothesis (CoK)",
                          "por_runtime": "none",
@@ -271,15 +273,15 @@ RULE_EVIDENCE = {
 }
 
 EDGE_MAPPING_EVIDENCE = {
-    "status": "single-por-runtime-case; general-mapping-unverified",
-    "source_boundary": "PoR DOS runtime supports interaction-gated crossing for one flag-2 edge; GEO field binding and general semantics remain open; flag 3 is CoK-only hypothesis",
+    "status": "single-por-runtime-report; general-mapping-unverified",
+    "source_boundary": "GoldBox reports one PoR DOS interaction-gated flag-2 crossing; GEO field binding, source-edge persistence, and general semantics remain unverified; flag 3 is CoK-only hypothesis",
     "por_door_rule_proven": False,
     "wall_art_binding_proven": False,
     "por_runtime_observation": {
         "source": "GoldBox read-only reference: docs/engine/research/gen1-dosbox-runtime-trace.md, PoR DOS runtime sections dated 2026-07-22",
         "case": "GEO2.DAX block 20, cell (14,10), west, wall slot 10, observed plane-3 flag 2",
-        "outcome": "LOCKED. BASH PICK EXIT; Pick failed in one attempt; Bash succeeded, party crossed to (13,10), and the original persisted the opened edge",
-        "scope": "one native route observation; not a full proof that every stored flag-2 byte feeds this runtime edge reader",
+        "outcome": "GoldBox PoR trace reports LOCKED. BASH PICK EXIT; one Pick failed; Bash succeeded and the party crossed to (13,10). Its recorded post-crossing wall sample is at the destination cell, not a readback of source edge (14,10) west; persistence is not independently verified here",
+        "scope": "one route as reported in the read-only GoldBox note; underlying capture files are not present in this checkout; not a proof that every stored flag-2 byte feeds this runtime edge reader",
     },
     "rules": RULE_EVIDENCE,
 }
@@ -296,10 +298,10 @@ CANDIDATE_FLAG2_PASSABILITY = 2
 
 def flag2_candidate_status(passability: int) -> str:
     if passability == CANDIDATE_FLAG2_PASSABILITY:
-        return ("single-route runtime-tested: action accepted and crossing allowed; "
-                "tested edge remained passability 2 after crossing, so no opening "
-                "was observed; general flag-2 mapping, GEO-reader binding and "
-                "persistent opening remain unproven; not default")
+        return ("one OpenUA test run logged crossing allowed=1 with passability 2; "
+                "input action label and PoR parity are unverified; the tested edge "
+                "remained passability 2 after crossing; general flag-2 mapping and "
+                "GEO-reader binding remain unproven; not default")
     return ("not runtime-tested; general flag-2 mapping, GEO-reader binding and "
             "persistent opening remain unproven; not default")
 
@@ -403,12 +405,12 @@ def parse_expectation(text: str) -> dict:
 
 def build_openua_geo(cells: list[dict], entry: Optional[tuple[int, int, int]],
                      flag2_passability: Optional[int] = None) -> Geo:
-    """A 16 x 16 OpenUA area built with OpenUA's own geo.py. Cell (x,y) is
-    addressed as cell(col=y, row=x): PoR's x axis maps to OpenUA's row axis and
-    its y axis to OpenUA's column axis. A controlled runtime trace confirms
-    this transpose for the flag-2 route at source (14,10): entry (14,10),
-    facing west, steps to (13,10). Wall bytes retain N/E/S/W order. The plane-2
-    descriptor and zone bits are left at zero (not mapped).
+    """A 16 x 16 OpenUA area built with OpenUA's own geo.py. The current
+    candidate addresses source cell (x,y) as cell(col=y, row=x), based on one
+    route fit: after the direct orientation reached a different cell, this
+    transpose made the same flag-2 test route reach (13,10). It is not an
+    independent coordinate validation. Wall bytes retain N/E/S/W order. The
+    plane-2 descriptor and zone bits are left at zero (not mapped).
     ``flag2_passability`` is the opt-in candidate (None = default)."""
     g = Geo.blank(GRID_W, GRID_H)
     g.hdr[4:14] = ART_BLOCK          # the known-good art binding dsn.py uses
@@ -463,8 +465,8 @@ def build_normalized(source: dict, cells: list[dict], expectations: list[dict],
         "coordinate_mapping": {
             "source_x": "OpenUA row",
             "source_y": "OpenUA column",
-            "evidence": "single controlled PoR door route matched after transposing the test GEO cell grid and entry",
-            "status": "runtime-supported-single-route",
+            "evidence": "transpose selected after direct orientation mismatch; same PoR door route then reached expected destination; no independent route validates the transform",
+            "status": "single-route-fit-unvalidated",
         },
         "cells": cells_out,
         "diagnostics": diagnostics,
@@ -486,9 +488,9 @@ def render_report(norm: dict, warnings: list[str], unsupported: list[str]) -> st
         "logic. Runtime loading in OpenUA is not verified by this tool.",
         "",
         "**Evidence boundary:** emitted door passability and wall-slot texture",
-        "choices remain provisional overall. One PoR DOS runtime route supports",
-        "interaction-gated crossing for a flag-2 edge; its general GEO-to-runtime",
-        "binding is open. Flag 3 is a CoK-only hypothesis, and wall art is unverified.",
+        "choices remain provisional overall. A GoldBox note reports one PoR DOS",
+        "interaction-gated crossing for a flag-2 edge; its GEO-to-runtime binding",
+        "is open and source-edge persistence is not independently verified. Flag 3 is a CoK-only hypothesis; wall art is unverified.",
         "See the converter documentation for the evidence boundary.",
         "",
         "## Source (read-only)",
@@ -504,7 +506,7 @@ def render_report(norm: dict, warnings: list[str], unsupported: list[str]) -> st
         "| compressed size | %d |" % s["comp_size"],
         "| decoded sha256 | `%s` |" % s["decoded_sha256"],
         "| grid | 16 x 16, row 0 north |",
-        "| source coordinate mapping | PoR x -> OpenUA row; PoR y -> OpenUA column (single runtime route) |",
+        "| source coordinate mapping | candidate: PoR x -> OpenUA row; PoR y -> OpenUA column (fit to one route, not independently validated) |",
         "",
         "## Edge mapping (Gen1 slot/door -> OpenUA wall byte)",
         "",
@@ -564,7 +566,7 @@ UNSUPPORTED_MAP_ONLY = [
     "plane 2 descriptor (search/event dispatch key, backdrop/zone): kept in por_map.json only",
     "zones and cell flags: zero",
     "wall art: HDR art block copied from OpenUA dsn.py (known-good), not PoR WALLDEF",
-    "door semantics: flag 2 has one PoR DOS runtime route (Bash opened it), but the GEO-reader binding and the general flag-2 rule are unproven; flag 3 is a CoK/other-title hypothesis; both currently encode to the OpenUA Blocked-menu edge (15)",
+    "door semantics: a GoldBox PoR trace reports one flag-2 Bash crossing, but GEO-reader binding, source-edge persistence and general flag-2 semantics are unverified; flag 3 is a CoK/other-title hypothesis; both currently encode to the OpenUA Blocked-menu edge (15)",
     "Gen1 wall slot used as the OpenUA texture group unchanged (unverified)",
     "party and economy: GAME001 defaults (XP, gold) from dsn.Design, not PoR",
     "campaign: one area only, no transitions to other areas",

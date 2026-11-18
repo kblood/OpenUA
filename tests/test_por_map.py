@@ -259,7 +259,7 @@ def test_door_two_and_three_keep_same_byte_but_distinct_evidence_labels():
     assert pm.map_edge(10, 3) == (0xFA, "door3-unresolved")
     evidence = pm.EDGE_MAPPING_EVIDENCE
     assert evidence["por_door_rule_proven"] is False
-    assert evidence["status"] == "single-por-runtime-case; general-mapping-unverified"
+    assert evidence["status"] == "single-por-runtime-report; general-mapping-unverified"
     assert "GEO2.DAX block 20" in evidence["por_runtime_observation"]["case"]
 
 
@@ -267,8 +267,8 @@ def test_rule_evidence_separates_door_two_runtime_route_from_door_three_hypothes
     rules = pm.RULE_EVIDENCE
     assert set(rules) == set(pm.MAP_RULES)
     # Only the flag-2 rule has a PoR runtime observation, and it is one route.
-    assert rules["locked"]["basis"] == "por-runtime-single-route"
-    assert rules["locked"]["status"] == "supported-single-route"
+    assert rules["locked"]["basis"] == "reported-por-runtime-single-route"
+    assert rules["locked"]["status"] == "reported-single-route"
     assert "(14,10)" in rules["locked"]["por_runtime"]
     assert rules["door3-unresolved"]["por_runtime"] == "none"
     assert rules["door3-unresolved"]["status"] == "provisional"
@@ -297,7 +297,7 @@ def test_door_two_and_three_split_in_normalized_counts_with_identical_wall_bytes
         walls = sorted(list(g.cell(*xy)[:4]))
         assert walls == [0, 0, 0, 0xFA], (xy, walls)
     assert norm["edge_mapping_evidence"]["rules"]["locked"]["status"] == \
-        "supported-single-route"
+        "reported-single-route"
 
 
 # ---- OpenUA geo: coordinate and wall mapping -------------------------------
@@ -398,19 +398,19 @@ def test_end_to_end_emits_map_only_design(tmp_path, capsys):
     assert norm["status"] == "map-only" and norm["playable"] is False
     evidence = dict(norm["edge_mapping_evidence"])
     rules = evidence.pop("rules")
-    assert rules["locked"]["status"] == "supported-single-route"
+    assert rules["locked"]["status"] == "reported-single-route"
     assert rules["door3-unresolved"]["status"] == "provisional"
     assert all(r["general_rule_proven"] is False for r in rules.values())
     assert evidence == {
-        "status": "single-por-runtime-case; general-mapping-unverified",
-        "source_boundary": "PoR DOS runtime supports interaction-gated crossing for one flag-2 edge; GEO field binding and general semantics remain open; flag 3 is CoK-only hypothesis",
+        "status": "single-por-runtime-report; general-mapping-unverified",
+        "source_boundary": "GoldBox reports one PoR DOS interaction-gated flag-2 crossing; GEO field binding, source-edge persistence, and general semantics remain unverified; flag 3 is CoK-only hypothesis",
         "por_door_rule_proven": False,
         "wall_art_binding_proven": False,
         "por_runtime_observation": {
             "source": "GoldBox read-only reference: docs/engine/research/gen1-dosbox-runtime-trace.md, PoR DOS runtime sections dated 2026-07-22",
             "case": "GEO2.DAX block 20, cell (14,10), west, wall slot 10, observed plane-3 flag 2",
-            "outcome": "LOCKED. BASH PICK EXIT; Pick failed in one attempt; Bash succeeded, party crossed to (13,10), and the original persisted the opened edge",
-            "scope": "one native route observation; not a full proof that every stored flag-2 byte feeds this runtime edge reader",
+            "outcome": "GoldBox PoR trace reports LOCKED. BASH PICK EXIT; one Pick failed; Bash succeeded and the party crossed to (13,10). Its recorded post-crossing wall sample is at the destination cell, not a readback of source edge (14,10) west; persistence is not independently verified here",
+            "scope": "one route as reported in the read-only GoldBox note; underlying capture files are not present in this checkout; not a proof that every stored flag-2 byte feeds this runtime edge reader",
         },
     }
     assert norm["source"]["block_id"] == 18 and norm["source"]["raw_size"] == 1026
@@ -419,15 +419,16 @@ def test_end_to_end_emits_map_only_design(tmp_path, capsys):
     assert norm["coordinate_mapping"] == {
         "source_x": "OpenUA row",
         "source_y": "OpenUA column",
-        "evidence": "single controlled PoR door route matched after transposing the test GEO cell grid and entry",
-        "status": "runtime-supported-single-route",
+        "evidence": "transpose selected after direct orientation mismatch; same PoR door route then reached expected destination; no independent route validates the transform",
+        "status": "single-route-fit-unvalidated",
     }
     assert norm["expectations"][0]["ok"] is True
     assert len(norm["cells"]) == 256
 
     report = (out / "por_map_report.md").read_text(encoding="utf-8")
     assert "MAP-ONLY" in report and "Not a playable module claim" in report
-    assert "One PoR DOS runtime route supports" in report
+    assert "A GoldBox note reports one PoR DOS" in report
+    assert "source-edge persistence is not independently verified" in report
     assert "Flag 3 is a CoK-only hypothesis" in report
     assert "PoR x -> OpenUA row; PoR y -> OpenUA column" in report
     assert "ECL scripts and every event" in report

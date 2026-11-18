@@ -68,10 +68,11 @@ def test_candidate_constant_is_two_and_not_default():
 
 # ---- golden: default output after the one-route axis correction ------------
 
-# Recorded after the runtime-supported PoR x/y -> OpenUA row/column transform.
+# Recorded after the one-route-fit PoR x/y -> OpenUA row/column candidate; these
+# metadata hashes change when evidence wording changes, while GEO bytes remain pinned.
 GOLDEN_DEFAULT = {
-    "por_map.json": "ac35defe6ee1ee3f75eea3d72a3ab8ee8d55fe935e813666289ec9640fae3efc",
-    "por_map_report.md": "1cc39b34c7299f346ae1056e06c2a592cf63301de18aa4266f532670a487b186",
+    "por_map.json": "bb879c55658b6cd7fcf913b26f4791129474c1f0e21e6e8900c3529b2adad2d6",
+    "por_map_report.md": "31b1c93dcfedacb7093ec15dfba1bf68efd63567fbe5623f2ffae4e5dddb0f9e",
     "PORMAP.DSN/GAME001.DAT": "918e07b80465a8cdf4d572dab356dce6f2f373a0faea14a862f50e867757c506",
     "PORMAP.DSN/" + GEO_NAME: "1b9aed39096b77cb4f471c3facaedbb12fa4802883c9ce0e19a8a36ffc50e900",
 }
@@ -122,11 +123,12 @@ def test_candidate_is_opt_in_via_cli(tmp_path, capsys):
     assert norm["candidate"]["evidence_doc"] == "docs/por-door-flag2-candidate-runtime-20261118.md"
     report = (out / "por_map_report.md").read_text(encoding="utf-8")
     assert "OPT-IN FLAG-2 ENCODING" in report
-    assert "single-route runtime-tested" in report
+    assert "one OpenUA test run logged crossing allowed=1" in report
     assert "general flag-2 mapping" in report
-    assert "no opening was observed" in report
-    assert "persistent opening remain unproven" in report
-    assert "single-route runtime-tested" in norm["candidate"]["status"]
+    assert "remained passability 2 after crossing" in report
+    assert "input action label and PoR parity are unverified" in report
+    assert "GEO-reader binding remain unproven" in report
+    assert "one OpenUA test run logged crossing allowed=1" in norm["candidate"]["status"]
 
 
 def test_non_two_candidate_value_is_not_called_runtime_tested(tmp_path):
