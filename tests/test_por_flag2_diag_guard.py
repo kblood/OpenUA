@@ -19,6 +19,17 @@ def test_menu_logging_is_compile_time_diagnostic_only():
     assert '#ifdef FRUA_DOOR_DIAG\n\tdbg_file_num("DOOR menu allowed="' in body
 
 
+def test_blocked_menu_pick_zero_dispatches_to_force_handler():
+    body = function_body("static void l45f0_menu(short variant)",
+                         "/* jt955's case-4 decision core")
+    assert "if (g_a5_byte(-22726) != 0)\n\t\tjt155((short)0, &n);" in body
+    case_zero = body[body.index("case 0:"):body.index("case 1:")]
+    assert "l326e()" in case_zero
+    assert 'Blocked:" menu action 0: FORCE' in TEXT
+    rearm = function_body("static void jt954(void)", "/* L326e")
+    assert "jt399(&g_a5_byte(-22727), (short)4, (short)1);" in rearm
+
+
 def test_strength_override_requires_both_test_macros():
     body = function_body("static int play_forward_allowed(void)\n{",
                          "/* L3af2 (CODE 21+0x3af2) — compute")

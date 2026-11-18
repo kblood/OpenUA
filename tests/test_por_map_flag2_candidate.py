@@ -123,12 +123,15 @@ def test_candidate_is_opt_in_via_cli(tmp_path, capsys):
     assert norm["candidate"]["evidence_doc"] == "docs/por-door-flag2-candidate-runtime-20261118.md"
     report = (out / "por_map_report.md").read_text(encoding="utf-8")
     assert "OPT-IN FLAG-2 ENCODING" in report
-    assert "one OpenUA test run logged crossing allowed=1" in report
+    assert "two OpenUA test runs logged menu pick=0" in report
+    assert "source routes case 0 to FORCE" in report
     assert "general flag-2 mapping" in report
-    assert "remained passability 2 after crossing" in report
-    assert "input action label and PoR parity are unverified" in report
+    assert "tested edge remained passability 2" in report
+    assert "FRUA_DOOR_STR25 was active in one run" in report
+    assert "PoR parity" in report
     assert "GEO-reader binding remain unproven" in report
-    assert "one OpenUA test run logged crossing allowed=1" in norm["candidate"]["status"]
+    assert "two OpenUA test runs logged menu pick=0" in norm["candidate"]["status"]
+    assert "source routes case 0 to FORCE" in norm["candidate"]["status"]
 
 
 def test_non_two_candidate_value_is_not_called_runtime_tested(tmp_path):

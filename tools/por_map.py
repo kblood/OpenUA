@@ -288,20 +288,21 @@ EDGE_MAPPING_EVIDENCE = {
 
 
 # OPT-IN CANDIDATE ONLY. The default encodes door flag 2 as passability 15 (the
-# Blocked-menu edge). Passability 2 has one bounded runtime-tested route through
-# the standard pipeline and Hatari; general flag-2 semantics, GEO-reader binding
-# and persistent opening remain unproven. It is never applied unless a caller asks
-# for it (``--candidate-flag2-passable``); it is not the default and is not a
-# verified PoR rule.
+# Blocked-menu edge). Passability 2 has two bounded OpenUA test runs through the
+# standard pipeline and Hatari; general flag-2 semantics, GEO-reader binding and
+# persistent opening remain unproven. It is never applied unless a caller asks
+# for it (``--candidate-flag2-passable``); it is not the default or a verified
+# PoR rule.
 CANDIDATE_FLAG2_PASSABILITY = 2
 
 
 def flag2_candidate_status(passability: int) -> str:
     if passability == CANDIDATE_FLAG2_PASSABILITY:
-        return ("one OpenUA test run logged crossing allowed=1 with passability 2; "
-                "input action label and PoR parity are unverified; the tested edge "
-                "remained passability 2 after crossing; general flag-2 mapping and "
-                "GEO-reader binding remain unproven; not default")
+        return ("two OpenUA test runs logged menu pick=0 and crossing allowed=1 "
+                "for passability 2; source routes case 0 to FORCE; FRUA_DOOR_STR25 "
+                "was active in one run and absent in a fixture-character follow-up; "
+                "the tested edge remained passability 2; PoR parity, general flag-2 "
+                "mapping and GEO-reader binding remain unproven; not default")
     return ("not runtime-tested; general flag-2 mapping, GEO-reader binding and "
             "persistent opening remain unproven; not default")
 

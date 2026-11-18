@@ -775,7 +775,7 @@ observed flag-2 case from the unresolved flag-3 mapping.
 | slot 0 (any door) | `0x00` | open |
 | slot S, door 0 | `0xE0 \| S` | solid wall, texture group S |
 | slot S, door 1 | `0x10 \| S` | passable secret-door edge (engine says "A SECRET DOOR!") |
-| slot S, door 2 | default `0xF0 \| S`; opt-in passability 2 gives `0x20 \| S` | one OpenUA test build crossed with `allowed=1`; action label and PoR parity are unverified |
+| slot S, door 2 | default `0xF0 \| S`; opt-in passability 2 gives `0x20 \| S` | two OpenUA test runs logged menu index 0 and crossed with `allowed=1`; source routes index 0 to FORCE, but action equivalence and PoR parity are unverified |
 | slot S, door 3 | `0xF0 \| S` | same current byte, but unresolved for PoR; CoK-only Bash/Knock hypothesis |
 
 The texture group S is the Gen1 slot used unchanged. That is **not verified**
@@ -783,10 +783,10 @@ against PoR's WALLDEF art. Door flags 2 and 3 have distinct diagnostic labels
 (`locked`, status `reported-single-route`; `door3-unresolved`, status
 `provisional`). By default they emit the same byte; the opt-in passability-2
 candidate changes only flag-2 bytes. In its tested route the edge stayed at
-passability 2 after crossing, so no opening was observed. The cited native note
-reports persistence, but the available post-crossing sample is at the destination
-cell and does not verify the source-edge value. Per-rule provenance is in
-`por_map.json` under `edge_mapping_evidence.rules`. Every rule keeps
+passability 2 after crossing in both candidate runs, so no opening was observed.
+The cited native note reports persistence, but the available post-crossing sample
+is at the destination cell and does not verify the source-edge value. Per-rule
+provenance is in `por_map.json` under `edge_mapping_evidence.rules`. Every rule keeps
 `geo_reader_binding: unproven` and `general_rule_proven: false`. The per-cell
 descriptor and zone bits are not written.
 

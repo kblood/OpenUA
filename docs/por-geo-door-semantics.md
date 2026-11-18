@@ -303,9 +303,12 @@ At row 14, column 10, facing west, OpenUA read passability 2, logged menu pick
 index 0 as allowed, and moved to row 13, column 10. A corrected follow-up
 diagnostic read the tested source edge after movement and still found
 passability 2: this route crossed without changing the edge in memory. It does
-not verify the visible menu label, because the test read the action index
-rather than text. The area/block join and general flag-2 mapping remain
-hypotheses. Details and exact run folder are in
+not read the visible menu label. Source routes menu case 0 to the FORCE handler,
+but the area/block join and general flag-2 mapping remain hypotheses. A second
+Hatari run with a build that omitted `FRUA_DOOR_STR25` also logged menu index 0,
+allowed 1, and the move; its fixture CCH character stats were not decoded, so
+this does not establish ordinary-party success odds. The source edge still read
+passability 2. Details and exact run folder are in
 `por-door-flag2-candidate-runtime-20261118.md`.
 
 ## Evidence class 5: other-title hypothesis (NOT PoR evidence)
@@ -326,13 +329,13 @@ but is a different title and is not used to decide anything here.
 | slot 0 -> open | `0x00` | 88 slot-0 doors exist; their effect is unknown | open | not proven either way |
 | door 0 wall -> solid | `0xE0\|S` | 9,780 wall edges; 100 one-sided disagreements | solid | not proven |
 | door 1 -> secret door | `0x10\|S` | PoR writes field `01`; conditional static branch with reader result `R == 1` updates position, but reader identity and GEO-plane source are unestablished; 2,876 wall edges | passes, prints "A secret door!" | **not proven**: no established link from GEO flag 1 to `R == 1`, nor PoR evidence for the secret-door message |
-| door 2 -> interaction-gated | default `0xF0\|S`; opt-in `0x20\|S` | 128 wall edges; one PoR DOS route at GEO2 block 20 shows LOCKED/BASH/PICK and successful Bash crossing | passability 2 reaches the Blocked action and one pipeline-emitted route crosses | supported for one native route and one OpenUA test route; general flag binding and persistent-open parity remain unproven |
+| door 2 -> interaction-gated | default `0xF0\|S`; opt-in `0x20\|S` | 128 wall edges; one reported PoR DOS route at GEO2 block 20 shows LOCKED/BASH/PICK and successful Bash crossing | passability 2 reaches the Blocked action; two OpenUA test runs crossed at the tested edge | reported for one native route and observed in two OpenUA test runs; general flag binding and persistent-open parity remain unproven |
 | door 3 -> unresolved | `0xF0\|S` | 14 wall edges; no PoR runtime observation | same OpenUA Blocked menu as door 2 | unresolved; Bash/Knock-only comes from CoK research, not PoR |
 
 The default converter still maps flag 2 and flag 3 to passability 15. Its
-opt-in passability-2 encoding for flag 2 has one bounded OpenUA movement test
-through the standard pipeline; it remains off by default because the GEO
-reader binding and general rule are unproven. The converter stores N/E/S/W in
+opt-in passability-2 encoding for flag 2 has two bounded OpenUA movement runs,
+one emitted through the standard pipeline; it remains off by default because
+the GEO reader binding and general rule are unproven. The converter stores N/E/S/W in
 the order selected by the OpenUA engine and writes cardinal entry headings with
 the engine codes. Door flags remain distinct in normalized rule counts and
 evidence labels. A future flag-3 mapping change needs PoR-specific evidence;

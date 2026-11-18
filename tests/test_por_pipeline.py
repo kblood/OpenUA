@@ -107,16 +107,17 @@ def test_flag2_candidate_manifest_limits_runtime_claim_to_passability_two(tmp_pa
     assert tested["candidate"]["opt_in"] is True
     assert tested["candidate"]["default"] is False
     assert tested["candidate"]["playable"] is False
-    assert "one OpenUA test run logged crossing allowed=1" in tested["candidate"]["status"]
-    assert "input action label and PoR parity are unverified" in tested["candidate"]["status"]
-    assert "remained passability 2 after crossing" in tested["candidate"]["status"]
+    assert "two OpenUA test runs logged menu pick=0" in tested["candidate"]["status"]
+    assert "source routes case 0 to FORCE" in tested["candidate"]["status"]
+    assert "FRUA_DOOR_STR25 was active in one run" in tested["candidate"]["status"]
+    assert "tested edge remained passability 2" in tested["candidate"]["status"]
     assert tested["candidate"]["evidence_doc"] == "docs/por-door-flag2-candidate-runtime-20261118.md"
     door_line = next(x for x in tested["unsupported"] if x.startswith("Door mapping:"))
-    assert "passability 2" in door_line and "one OpenUA test run logged crossing allowed=1" in door_line
+    assert "passability 2" in door_line and "two OpenUA test runs logged menu pick=0" in door_line
     assert "general flag-2 rule remain unproven" in door_line
     assert tested["designs"][0]["loader_equivalent"]["runtime_loaded"] is False
     report = (tmp_path / "pass2" / "por_pipeline_report.md").read_text(encoding="utf-8")
-    assert "one OpenUA test run logged crossing allowed=1" in report and "playable: false" in report
+    assert "two OpenUA test runs logged menu pick=0" in report and "playable: false" in report
 
     untested, code = pp.run(install, tmp_path / "pass3", plan, flag2_passability=3)
     assert code == 0

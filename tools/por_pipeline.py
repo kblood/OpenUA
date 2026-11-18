@@ -205,10 +205,12 @@ def unsupported_list(flag2_passability: Optional[int] = None) -> list[str]:
 
 def flag2_candidate_status(passability: int) -> str:
     if passability == 2:
-        return ("one OpenUA test run logged crossing allowed=1 with passability 2; "
-                "input action label and PoR parity are unverified; the tested edge "
-                "remained passability 2 after crossing; general flag-2 mapping and "
-                "GEO-reader binding remain unproven; not default or a general rule")
+        return ("two OpenUA test runs logged menu pick=0 and crossing allowed=1 "
+                "for passability 2; source routes case 0 to FORCE; FRUA_DOOR_STR25 "
+                "was active in one run and absent in a fixture-character follow-up; "
+                "the tested edge remained passability 2; PoR parity, general flag-2 "
+                "mapping and GEO-reader binding remain unproven; not default or a "
+                "general rule")
     return ("not runtime-tested; general mapping remains unproven; not default or a "
             "general rule")
 

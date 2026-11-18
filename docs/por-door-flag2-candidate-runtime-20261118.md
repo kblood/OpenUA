@@ -16,19 +16,29 @@ Force success whenever the selected passability is 15, even if a party member
 would otherwise pass the Strength check.
 
 The experiment compared the default edge `0xFA` with an opt-in candidate
-`0x2A` (passability 2, same slot) in an isolated area-20 test design. Both runs
-used one disposable build with `FRUA_DOOR_DIAG` and `FRUA_DOOR_STR25`; the
-second macro sets the first active party member's Strength to 25 in that test
-build. The design files were compared before and after each run.
+`0x2A` (passability 2, same slot) in an isolated area-20 test design. The
+default and first candidate runs used a disposable build with `FRUA_DOOR_DIAG`
+and `FRUA_DOOR_STR25`; the second macro sets the first active party member's
+Strength to 25 in that test build. A later candidate follow-up used the same
+fixture without `FRUA_DOOR_STR25`. Its six existing `.CCH` files were retained
+from the fixture and their character stats were not decoded, so this is not a
+claim about an ordinary or native party. The design files were compared before
+and after each run.
 
 | Run | Selected edge | Menu pick | Action allowed | Forward allowed | Stored edge at next decision |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Default | 15 (`0xFA`) | 0 | 0 | 0 | 15 |
 | Candidate | 2 (`0x2A`) | 0 | 1 | 1 | 2 |
 
-This establishes that, in this OpenUA test path, passability 2 reaches the
-same blocked-action decision and lets its item-0 Force branch allow movement;
-passability 15 does not. It does not verify the visible label on item 0.
+Both passability-2 runs logged `menu pick=0`, `menu allowed=1`, and
+`forward allowed=1`; the passability-15 control logged `menu pick=0` and
+`allowed=0`. OpenUA source maps menu case 0 to the FORCE handler (`l45f0_menu`
+case 0 calls `l326e`), and `jt954` rearms that option before the blocked-menu
+decision. The visible label was not read from a screenshot. One candidate run
+used the Strength-25 override; the follow-up did not, but used fixture
+characters whose stats remain unparsed. This shows the test result is not
+dependent on the compile-time Strength override. It does not establish
+ordinary-party success odds or PoR action equivalence.
 
 ## Follow-up: source-to-OpenUA coordinate transform
 
@@ -86,9 +96,9 @@ it does not execute the engine.
   All 16 files in each design folder had identical hashes before and after the
   runs. These results do not establish whether the transposed edge changes in
   memory; the direct run shows no persistence for its measured cell.
-- This is one controlled test route and one run per encoding. It does not bind
-  stored GEO flag-2 bytes generally to the OpenUA runtime field or prove all
-  flag-2 semantics.
+- This is one controlled test route: one passability-15 control and two
+  passability-2 runs. It does not bind stored GEO flag-2 bytes generally to the
+  OpenUA runtime field or prove all flag-2 semantics.
 - The candidate changes all flag-2 edges in the selected GEO block, not only
   `(14,10)` west. Its CLI setting is intended for bounded experiments.
 - Door state persistence, wall art, visible menu text, and full-game behavior
@@ -191,3 +201,39 @@ does not establish persistence: the single corrected run above is one bounded
 observation of one route, and a new runtime observation is needed before the
 stored-edge result can be stated as a repeatable fact. The guard
 `tests/test_por_flag2_diag_guard.py` now also rejects a `(10,14)` sample.
+
+### No-STR25 follow-up
+
+A second candidate run used the same `POR2NEW.DSN` fixture and key sequence,
+but a separately built binary without `FRUA_DOOR_STR25`. The build command was:
+
+```text
+make CPU68K=68000 NOEMBED=1 EXTRA_CFLAGS="-DFRUA_AREATEST -DFRUA_SKIP_ENTRY_EVENTS -DFRUA_GEO_SWEEPTEST -DFRUA_DOOR_DIAG"
+```
+
+The run binary SHA-256 is
+`3DE4EAC7A68D4A05BD10D36B4620F2653A349CB78FF3F15F428924F3CB1217B9`.
+The `GAME001.DAT`, `GEO020.DAT`, and `start.dat` hashes matched the corrected
+run fixture; all six `.CCH` hashes also matched before and after this run.
+`DBG.LOG` recorded:
+
+```text
+DOOR forward row=14
+DOOR forward col=10
+DOOR forward facing=6
+DOOR forward edge=2
+DOOR menu pick=0
+DOOR menu allowed=1
+DOOR forward allowed=1
+DOOR stored edge 14,10 W=2
+DOOR forward row=13
+DOOR forward col=10
+DOOR forward facing=6
+DOOR forward edge=0
+```
+
+This is a second OpenUA observation that the test fixture crosses passability 2
+without the compile-time Strength override. It does not show the characters'
+Strength or establish success odds for a normally prepared party. The selected
+menu index maps to FORCE in source; visible text was not captured. The edge
+still reads 2 after crossing, and the DOS design files are unchanged.
