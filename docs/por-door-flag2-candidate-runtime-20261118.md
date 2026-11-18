@@ -43,11 +43,21 @@ and entry coordinates in a fresh copy. The wall bytes, including the tested
 | Transposed cell grid and entry | row 14, column 10 | 6 | 2 | row 13, column 10 |
 
 The second destination matches the recorded PoR route `(13,10)`. The selected
-edge remains passability 2 in both runs, so the transform preserves the tested
-door interaction while aligning this route's coordinates. The converter now
+edge remains passability 2 in the direct-placement run. The transposed run's
+post-menu readback is not a read of the selected edge: its diagnostic is
+hard-coded to `jt210(10,14,6)`, while the transposed party stands at
+`row=14,column=10`. That cell was already open (`0x00`) in the transposed
+fixture. The transposed run therefore verifies the allowed move and destination,
+but does not measure whether the selected edge changed. The converter now
 places source `(x,y)` at OpenUA `cell(col=y,row=x)` and writes the entry as
 `row=x, col=y`. This is evidence for one route; it does not validate all areas,
 events, transitions, or direction labels.
+
+The diagnostic also logs `DOOR forward edge=0` at the destination `(row=13,
+column=10)`, matching that cell's pristine fixture byte. It does not log the
+tested source edge after the menu. In the direct-placement run, the diagnostic
+does re-read its decision cell and reports passability 2 after the successful
+force action and move.
 
 The final comparison is in ignored folders
 `data/work/por-flag2-candidate-20261118/run-cand-direct-final/` and
@@ -67,9 +77,12 @@ it does not execute the engine.
 
 - The coordinate result is a single-route runtime check. Other coordinate
   joins and the full map have not been checked.
-- The in-memory edge remained 2, and all 16 files in the design folder had
-  identical hashes before and after both runs. OpenUA did not persist an
-  opened edge in this experiment.
+- In the direct-placement run, the in-memory decision edge remained 2 after
+  the successful force action and move. The transposed run did not read back
+  its decision edge, because its diagnostic samples the untransposed cell.
+  All 16 files in each design folder had identical hashes before and after the
+  runs. These results do not establish whether the transposed edge changes in
+  memory; the direct run shows no persistence for its measured cell.
 - This is one controlled test route and one run per encoding. It does not bind
   stored GEO flag-2 bytes generally to the OpenUA runtime field or prove all
   flag-2 semantics.
