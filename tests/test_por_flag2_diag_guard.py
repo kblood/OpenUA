@@ -51,4 +51,9 @@ def test_door_logs_read_the_selected_and_stored_edge_without_writing_it():
     # The diagnostic marker only surrounds logging and the optional STR write;
     # there is no door-byte assignment or call to the state-writing helper.
     assert "jt210((short)14, (short)10, (short)6)" in body
+    # Regression guard: the readback must sample the tested (row 14, col 10,
+    # west) edge, never the transposed (row 10, col 14) cell.
+    assert "jt210((short)10, (short)14" not in body
+    assert "jt210(10, 14" not in body
+    assert diagnostics.count('dbg_file_num("DOOR stored edge 14,10 W="') == 1
     assert "l493a(" not in body

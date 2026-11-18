@@ -49,8 +49,8 @@ hard-coded to `jt210(10,14,6)`, while the transposed party stands at
 `row=14,column=10`. That cell was already open (`0x00`) in the transposed
 fixture. The transposed run therefore verifies the allowed move and destination,
 but does not measure whether the selected edge changed. The test-only logger
-has since been corrected to read `jt210(14,10,6)`, the tested source edge; the
-correction has not yet been exercised in a new runtime run. The converter now
+has since been corrected to read `jt210(14,10,6)`, the tested source edge (the
+readback is exercised in the corrected run described below). The converter now
 places source `(x,y)` at OpenUA `cell(col=y,row=x)` and writes the entry as
 `row=x, col=y`. This is evidence for one route; it does not validate all areas,
 events, transitions, or direction labels.
@@ -180,3 +180,13 @@ bounded observation, not a general door-state rule or PoR parity result. The
 corrected readback also does not identify the visible menu label. The run
 compared the two design files before and after and found no changes; no Hatari
 process remained after exit.
+
+### Sample-location status
+
+The readback at `jt210(14,10,6)` is already in `src/engine/boot.c` at the
+committed `FRUA_DOOR_DIAG` site (`6a21e650`); the earlier `jt210(10,14,6)`
+sample is no longer in the source. This fixes the sample location only. It
+does not establish persistence: the single corrected run above is one bounded
+observation of one route, and a new runtime observation is needed before the
+stored-edge result can be stated as a repeatable fact. The guard
+`tests/test_por_flag2_diag_guard.py` now also rejects a `(10,14)` sample.
