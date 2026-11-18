@@ -2,7 +2,7 @@
 
 **Status: STATIC-PROBE-ONLY. `playable: false`. `executed: not_established`.** Answer: **the two targets are identified by bytes, conditional on the module base and the live module segment, and their wrappers and the wall-helper call shapes are consistent with an allocate/release pair.** Nothing here shows that either target runs, what DS holds, or that the F table is initialised at run time.
 
-Follows [por-wall-0111-target-probe.md](por-wall-0111-target-probe.md), which left `0x0AF8:0x023F` and `0x0AF8:0x0254` unidentified and asked for their return and size conventions (its "Next discriminator", item 1). It does not change any answer in that note. It uses the module base and live segment already measured in [por-geo-copy-helper-probe.md](por-geo-copy-helper-probe.md), which identified the same module for the copy helper `0x0AF8:0x1685`.
+Follows [por-wall-0111-target-probe.md](por-wall-0111-target-probe.md), which left `0x0AF8:0x023F` and `0x0AF8:0x0254` unidentified and asked for their return and size conventions (its "Next discriminator", item 1). The companion [fill/callers probe](por-wall-0111-fill-callers-probe.md) now resolves the `0x16A8` fill body and classifies two additional START call frames; it does not establish runtime use or pointer identity. This probe uses the module base and live segment already measured in [por-geo-copy-helper-probe.md](por-geo-copy-helper-probe.md), which identified the same module for the copy helper `0x0AF8:0x1685`.
 
 `tools/por_wall_0111_module_target_probe.py` is read-only and stdlib-only; it reuses `por_geo_copy_helper_probe` (pins, handler base, dump anchor), `por_overlay_group_map` (`Dump`) and `por_loadpieces_handler` (16-bit decoder). `tests/test_por_wall_0111_module_target_probe.py` has 22 synthetic tests (each with a mutated-byte falsifier) and one retail test gated on `OPENUA_POR_INSTALL`.
 
@@ -16,7 +16,7 @@ python tools/por_wall_0111_module_target_probe.py --install data/work/por-geo-ru
 OPENUA_POR_INSTALL="data/work/por-geo-run/POOLRAD" python -m pytest tests/test_por_wall_0111_module_target_probe.py -q
 ```
 
-Output: `data/work/por-wall-0111-module-target-probe/por_wall_0111_module_target_probe.json` (schema `openua.por-wall-0111-module-target-probe` v1, sorted keys, no timestamps, no absolute paths). Two runs are byte-identical. Exit `0` = every check matched; exit `2` = named refusal (unpinned input, module anchor not unique at load `0x1866`, output outside `data/work`, output inside the install). The tool writes nothing to the install.
+Output: `data/work/por-wall-0111-module-target-probe/por_wall_0111_module_target_probe.json` (schema `openua.por-wall-0111-module-target-probe` v1, sorted keys, no timestamps, no absolute paths). Two runs are byte-identical. Exit `0` = every self-check matched; exit `1` = the report was written but one or more self-checks failed; exit `2` = named refusal (unpinned input, module anchor not unique at load `0x1866`, output outside `data/work`, output inside the install). The JSON records `self_checks_passed`. The tool writes nothing to the install.
 
 ## Pinned inputs and the module mapping
 
@@ -88,9 +88,9 @@ Byte occurrences of `9A 3F 02 F8 0A` (call `0x023F`) and `9A 54 02 F8 0A` (call 
 | header | `0x6B27`: `[bp-4] = byte[bp+12] * [bp-2]`; `0x6B81`: block `+17` ← `[bp-2]`; `0x6B8E`: block `+8` ← byte `[bp+12]` | the block records its own size fields |
 | main allocate | `0x6B32`: `023F([bp-4] + 0x17)` | size = payload + 23 bytes |
 | element store | `0x6B3E`: element `[0..3]` ← `DX:AX` | the element holds the returned far pointer |
-| main zero-fill | `0x6B50`: `16A8(block, [bp-4]+0x17, 0)` | a 3-argument fill (ptr, count, value); the `16A8` body is **not** decoded |
+| main fill | `0x6B50`: `16A8(block, [bp-4]+0x17, 0)` | a 3-argument fill (ptr, count, value); the companion [fill/callers probe](por-wall-0111-fill-callers-probe.md) decodes `16A8` as `rep stosb` |
 | sub-block (only when `[bp+10]` bit 0 is set) | `0x6B9B` flag test; `0x6BA2`: `023F([bp-4] >> 2)` when flag `== 1`, else `0x6BDB`: `023F([bp-4])`; `0x6BAF`: block `+19..+22` ← `DX:AX` | a second pointer in the block |
-| sub zero-fill | `0x6BD4`, `0x6C03`: `16A8` | as above |
+| sub fill | `0x6BD4`, `0x6C03`: `16A8` | same helper; both call sites pass value 0, and their count expressions match the allocation sizes (see companion probe) |
 
 **`0x6C0E` (near-called from the wall body; `retf 4`; 52 instructions).** The release.
 
@@ -120,7 +120,7 @@ So the bytes **establish a size-symmetric allocate/release pair**: the size rele
 | --- | --- | --- |
 | Are `0x0AF8:0x023F` and `0x0AF8:0x0254` the module code at the file placements? | yes, under the module base `0xAC76` and load `0x1866`, in both dumps | that the module base holds for every offset in the module |
 | What is the caller ABI? | `023F`: one word (size); return `DX:AX` passed through. `0254`: word (size), far pointer (`ES:CX`, `BX`=seg); no return value | that every caller of `023F`/`0254` passes the same kinds of argument |
-| Allocation? | `023F` is a size-driven search of a DS-resident list at `0x440C`, returning the chosen node's far pointer; the wall helper stores that pointer in the element and zero-fills the block | that the list is initialised; the meaning of the node fields; that the zero-fill body is a memset |
+| Allocation? | `023F` is a size-driven search of a DS-resident list at `0x440C`, returning the chosen node's far pointer; the wall helper stores that pointer in the element and calls `16A8` with a matching-size zero fill | that the list is initialised; the meaning of the node fields; runtime allocation |
 | Release? | `0254` range-checks the far pointer against the DS words `0x4400..0x4406`, writes the `0x491` result into the block and relinks it at `0x440C`; the wall helper releases the element's pointer and clears it | that the release runs on any real path (the walk ignores branch conditions) |
 | Copy? | no string or block move in either helper | nothing (no copy reading is supported) |
 | DS values (`0x440C`, `0x4400..0x4406`, `0x4A1E`, `0x8754`) | the bytes read and write them | their values at any instant; the overlay's DGROUP base is not measured |
@@ -131,14 +131,13 @@ So the bytes **establish a size-symmetric allocate/release pair**: the size rele
 - That `DS:0x440C` and the bounds `DS:0x4400..0x4406` hold the values the helpers assume. The F table is **not** shown to be initialised at run time, and the F element address (`0x5E3A + 4·index`, from the wall-0111 note) is a conditional link, not measured here.
 - That `DX:AX` returned by `0x023F` is the block the caller keeps, rather than a free-list node that is later reused.
 - That `0x0254` frees the block it is handed. The helper writes words into the block and relinks it; that fits release but is not proved.
-- That the zero-fill helper `0x0AF8:0x16A8` is a memset: its body is not decoded here.
 - That `DS:0x4A1E` is a bit-depth or mode switch. It selects the shifted and unshifted size paths; its meaning is not established.
 - The meaning of block offsets `+8`, `+17`, `+19` and `+21` beyond the size and pointer roles the bytes show.
 - That the wall helpers are called with a null element. `0x6B07` stores the new pointer without testing the old one; whether the caller always releases first is not established.
 
-## Other callers (not classified)
+## Other callers
 
-`0x0AF8:0x023F` is also called at START `0x227D` with a constant size `0x3F`, and `0x0AF8:0x0254` at START `0x2268` with size `0x3F` and a far pointer from the caller's own arguments. Neither is decoded beyond the call bytes. They are the next callers to classify if the allocate/release reading is taken further.
+`0x0AF8:0x023F` is also called at START `0x227D`, and `0x0AF8:0x0254` at START `0x2268`. Their immediate caller frames are decoded in [por-wall-0111-fill-callers-probe.md](por-wall-0111-fill-callers-probe.md): both use size `0x3F`, and their pointer roles match as a static shape. Whether they operate on the same block at runtime remains unestablished.
 
 ## Limits
 
@@ -154,8 +153,7 @@ So the bytes **establish a size-symmetric allocate/release pair**: the size rele
 
 1. **Measure the overlay's DGROUP base in a dump** (a DS-relative constant the body reads, for example `DS:0x4A1E` or `DS:0x440C`). Without it, the list head, the bounds and the flag cannot be read from memory, and nothing here about DS can be checked.
 2. **A RAM capture taken inside the wall path** (after the `023F` call at `0x6B39` returns, and before the `0254` call at `0x6C69`): the element's dword, block `+8`, `+17`, `+19`/`+21`, and the list head `DS:0x440C`. Equal sizes at alloc and release, with the element's pointer matching, would promote the pair from "shape" to "observed"; it needs new capture.
-3. **Decode `0x0AF8:0x16A8`** (the fill) and **module `0x432`** (the bound update). Either confirms or refutes the zero-fill and the upper-bound reading without any capture.
-4. **Classify the two other callers** at START `0x227D` and `0x2268` (constant `0x3F`): if they allocate and release the same `0x3F`-byte shape, the pair is a general module allocator rather than a wall-only one.
+3. **Decode module `0x432`** (the bound update). The fill helper and the two additional caller frames are now covered by the companion probe; module `0x432` remains open.
 
 ## Commands and results (2026-11-18)
 
@@ -168,8 +166,8 @@ python -m pytest tests/test_por_wall_0111_module_target_probe.py -q
 OPENUA_POR_INSTALL="data/work/por-geo-run/POOLRAD" python -m pytest tests/test_por_wall_0111_module_target_probe.py -q
 ```
 
-- CLI: `wrote data\work\por-wall-0111-module-target-probe (identity=…identified-by-bytes-in-pinned-dumps (both), wrappers matched=True, wall patterns matched=True)`, exit `0`. A second run is byte-identical (`cmp`).
-- Tests with the pin: **23 passed**. Without the pin: **22 passed, 1 skipped** (the retail test). The synthetic tests cover: call bytes; wrapper template and its derived targets (four one-byte falsifiers: retf immediate, carry offset, error code); window identity (agree, one-byte disagreement, repeated placement, degenerate window, uncovered live window); the helper exit tail (with a falsifier); direct DS operands and immediates; the 19 wall-helper patterns (all matched; falsified by a callee change, a size-expression change and a removed flag guard); and the two CLI refusals.
+- CLI: `wrote data\work\por-wall-0111-module-target-probe (identity=…identified-by-bytes-in-pinned-dumps (both), wrappers matched=True, wall patterns matched=True)`, exit `0`. A second run is byte-identical (`cmp`). The CLI exit status now follows the self-check result.
+- Tests with the pin: **24 passed**. Without the pin: **23 passed, 1 skipped** (the retail test). The synthetic tests cover: call bytes; wrapper template and its derived targets (four one-byte falsifiers: retf immediate, carry offset, error code); window identity (agree, one-byte disagreement, repeated placement, degenerate window, uncovered live window); the helper exit tail (with a falsifier); direct DS operands and immediates; the 19 wall-helper patterns (all matched; falsified by a callee change, a size-expression change and a removed flag guard); the CLI refusals; and exit 1 when a self-check fails.
 
 Pins (checked before and after; matched): `GAME.OVR` `872964a3…7928614`, `START.EXE` `d825df2b…60b6a07bd`.
 

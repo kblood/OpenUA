@@ -337,7 +337,9 @@ def probe(install: Path, dump_paths: list[Path]) -> dict:
     all_patterns_ok = all(r["matched"] for r in patterns)
     ident_ok = all(v["verdict"] == "identified-by-bytes-in-pinned-dumps" for v in ident.values())
     wrap_ok = all(w.get("matched") for w in wrappers.values())
-    shape_ok = ident_ok and wrap_ok and all_patterns_ok
+    helper_ok = all(h.get("exit_tail_ok") is True for h in helpers.values())
+    wall_walk_ok = all(w.get("stop") is None for w in helpers_wall.values())
+    shape_ok = ident_ok and wrap_ok and helper_ok and wall_walk_ok and all_patterns_ok
     doc = {
         "schema": SCHEMA, "schema_version": SCHEMA_VERSION, "tool": TOOL, "status_scope": STATUS_SCOPE,
         "playable": False,
@@ -357,6 +359,7 @@ def probe(install: Path, dump_paths: list[Path]) -> dict:
         "verdict": ("module targets identified by bytes in the pinned dumps; wrappers and wall-helper call "
                     "shapes match the template bytes; the alloc/release size symmetry is a static reading, "
                     "not a run" if shape_ok else "not all checks matched; see identity, wrappers and patterns"),
+        "self_checks_passed": shape_ok,
         "executed": "not_established",
         "playable_claim": False,
     }
@@ -407,7 +410,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     print("wrote %s (identity=%s, wrappers matched=%s, wall patterns matched=%s)" % (
         args.out, idents, all(w.get("matched") for w in doc["wrappers"].values()),
         all(r["matched"] for r in doc["wall_helper_patterns"])))
-    return 0
+    return 0 if doc.get("self_checks_passed") else 1
 
 
 if __name__ == "__main__":

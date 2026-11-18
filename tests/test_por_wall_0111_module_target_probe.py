@@ -210,6 +210,21 @@ def test_cli_refuses_unpinned_install(tmp_path):
     assert rc == 2
 
 
+def test_cli_returns_failure_when_a_probe_self_check_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(mp, "DATA_WORK", tmp_path)
+    bad = {
+        "identity": {"target": {"verdict": "unresolved"}},
+        "wrappers": {"target": {"matched": False}},
+        "wall_helper_patterns": [{"matched": False}],
+        "self_checks_passed": False,
+    }
+    monkeypatch.setattr(mp, "probe", lambda install, dumps: bad)
+    out = tmp_path / "out"
+    rc = mp.main(["--install", str(tmp_path / "install"), "-o", str(out)])
+    assert rc == 1
+    assert (out / "por_wall_0111_module_target_probe.json").exists()
+
+
 # -- retail (gated) -------------------------------------------------------------------------------
 
 @pytest.mark.skipif(not os.environ.get(ENV), reason=f"set {ENV} to the Pool of Radiance install")
