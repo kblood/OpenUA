@@ -1,6 +1,6 @@
 # PoR SAVGAMA one-area design: bounded runtime check (2026-11-18)
 
-**Status: partial. Area-2 load and OpenUA overland entry coordinates observed; first forward edge and move NOT established.**
+**Status: partial. Area-2 load, OpenUA entry coordinates and one blocked overland step observed; DOS parity NOT established.**
 `playable: false`. `runtime_binding_claimed: false`. The DOS save-to-area and block-to-area join,
 the original game's start area and facing remain hypotheses.
 
@@ -21,7 +21,7 @@ party at row 15, column 4, and let a first forward key produce an observable edg
 | Design from the default converter (no candidate flag) | Yes. One area-2 design; GEO002 emitted; flag 2 encoded as passability 15 (the default). |
 | Runtime loader reaches area 2 | **Yes.** `GEO-SWEEP area 002: width 16 height 16 cells 256` and the configured level is 002 from GAME001 byte 48. |
 | OpenUA overland entry coordinates | **Observed in attempt 8:** row 15, column 4 (`y*100+x = 1504`), facing byte 6 before the first logged command-dispatch return. This matches the candidate coordinates; it does not establish the DOS save-to-area or GEO block join. |
-| First forward edge / move | **Not measured.** No `DOOR forward` line was logged in any run; no forward decision was reached. |
+| First candidate forward step | **Observed in attempt 9:** candidate `(15,3)`, in bounds, `jt210` returned wall-art code 14, and the party stayed at `(15,4)`. The OpenUA source classifies 14 as solid. This tests the emitted design in OpenUA only. |
 
 The OpenUA coordinate observation does not confirm that the original game used this area/block join or that a forward command moves correctly.
 
@@ -85,6 +85,7 @@ A new `evidence*` folder was kept for each.
 | 6 | `evidence-attempt6-overland-cells/` | **Up (72), Return (28), Up (72)** | Overland image appeared; no `OVSTEP`. This run had no live coordinate instrumentation. |
 | 7 | `evidence-attempt7-overland-extra-up/` | Same sequence, then one extra Up (72) | Overland image remained; no `OVSTEP`. No live coordinate instrumentation. |
 | 8 | `evidence-attempt8-overland-extra-up/` | Same sequence and extra Up, with `FRUA_CELLSCAN` position markers | Entry position/facing and later snapshots recorded below. No `OVSTEP`; no successful movement observed. |
+| 9 | `evidence-attempt9-overland-extra-up/` | Same sequence and extra Up, with `FRUA_CELLSCAN` and `FRUA_OVDIAG` | `jt955` candidate `(15,3)`, in bounds, blocked result 14; no landing. |
 
 The earlier flag-2 door run sent Up, Return and Up, and it reached the dungeon walk. In attempts
 2–5 here, the first Up produced no walk render, and neither did Return on its own. That walk
@@ -161,6 +162,33 @@ The attempt-8 copy's `GAME001.DAT`, `GEO002.DAT` and `start.dat` hashes were ide
 source runtime both before launch and after exit: `5CBF1C30…FE085F`, `C863D2A8…B7DA40` and
 `8B3C441B…3E7652`, respectively. The copied `frua.prg` hash was `667C0FB0…CD333D`.
 
+### Attempt 9: identify the blocked overland candidate (2026-11-18)
+
+This run used a second disposable diagnostic build with the existing `FRUA_OVDIAG` logs enabled,
+and a fresh screenshot folder. It repeated Up (72), Return (28), Up (72), then one extra Up. The
+first three dispatch/step cycles logged the same state:
+
+```text
+OV pre level2 / mode3 / y*100+x1504 / facing6
+OV jt953 res-120; post position1504, facing0
+OVCAND cur-row 15; cand-row 15; cand-col 3; oob 0
+has_str(-5213 set) 0; blocked t 14; msg[0] 0
+OV post jt955 y*100+x1504 facing0
+```
+
+The next two cycles began at `(15,4)`, facing 0, and again reported candidate `(15,3)`,
+`oob=0`, `blocked t=14`; no `OVSTEP` was emitted. In `jt210`, the returned value is the
+high nibble (wall-art code) of the selected edge. The `jt955` switch treats code 14 as solid
+(`docs/play-vs-edit-audit.md`). Thus this run shows that OpenUA's converted map blocks the
+tested step at that edge. It does not show whether the original PoR game blocks the corresponding
+edge, and the save-to-GEO edge binding remains a hypothesis.
+
+The instrumented binary SHA-256 was
+`A53E39D7326BB08642B3C9BF775FBBC30A9A88D14C214953D02249F75CA60E3C`; the build exited 0 with
+a Make clock-skew warning. Hatari PID 1220 exited rc 0, with its 240 s watchdog not firing. The
+run copy's `GAME001.DAT`, `GEO002.DAT` and `start.dat` hashes match attempt 8's values above.
+The recurring `$ffffa200` Bus Error warning remained unclassified.
+
 ## Relevant log lines (final run, `evidence/DBG.LOG`)
 
 ```text
@@ -212,15 +240,16 @@ belonged to this session.
   design and reports its dimensions. It does not show the DOS block binding or the area join.
 - The original game's facing (west, from the unverified candidate mapping) and start area are
   hypotheses.
-- Attempt 8 observed OpenUA's entry coordinates `(15,4)` and facing byte `6`; it did not compare
-  the original game's live state or prove that the candidate join is authentic.
+- Attempts 8–9 observed OpenUA's entry coordinates `(15,4)` and facing byte `6`. Attempt 9's
+  tested edge resolves to wall code 14 in OpenUA; neither run compared the original game's live
+  state or proved that the candidate join is authentic.
 - Flag 2 is encoded as passability 15 (the default). The flag-2 candidate option was not used.
 - One design, one binary, one screen. No second route was checked.
 
 ## Next step (needs a decision)
 
-The overland trace confirms the candidate coordinates as the live OpenUA entry coordinates,
-but the input sequence did not produce `OVSTEP`, and the fourth dispatcher call was still
-waiting when the run ended. Next, identify `jt953`'s input-to-command mapping and log the
-selected command/result so a valid overland move can be tested without inferring from screen
-changes. Any parity claim will still need a corresponding observation from the original game.
+The overland trace confirms the candidate coordinates as the live OpenUA entry coordinates and
+shows the tested edge is blocked by wall code 14. Next, compare the original PoR cell/edge and
+movement outcome against this exact candidate, including a live DOS observation if the codewheel
+gate can be passed. Until then, the saved-position join and the block-to-area binding remain
+hypotheses, and no parity claim is supported.
