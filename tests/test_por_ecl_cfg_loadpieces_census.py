@@ -31,6 +31,8 @@ def test_candidate_flow_finds_load_pieces_after_linear_unknown_byte():
     assert result["candidate_offsets"] == [27]
     assert result["candidate_only_offsets"] == [27]
     assert len(result["candidate_operands"][0]["operands"]) == 3
+    assert result["candidate_operands"][0]["discovered_from"] == "edge-from-0016"
+    assert result["candidate_edges"][0]["target_offset"] == 27
 
 
 def test_terminal_assumption_can_make_linear_site_absent_from_candidate_set():

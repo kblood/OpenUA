@@ -28,6 +28,7 @@ def test_goto_can_reach_code_after_linear_unknown_byte():
     result = probe.analyze_block(data, header)
     assert [row["offset"] for row in result["candidate_instructions"]] == [22, 27]
     assert result["candidate_instructions"][0]["operands"][0]["word"] == 0x9919
+    assert result["candidate_instructions"][1]["discovered_from"] == "edge-from-0016"
     assert not result["stops"]
     assert result["runtime_reachability_established"] is False
 
