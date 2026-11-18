@@ -490,6 +490,13 @@ Full notes and limits: [`por-geo-all-map-group.md`](por-geo-all-map-group.md).
   `367717BEED5E9AEE562EFAFD62221E9F7A99E5BA524F0E268BB6038CB92D4AE9`.
   Capture and harness limits: [`por-geo-sweeptest.md`](por-geo-sweeptest.md),
   `data/work/por-openua-areatest-geosweep-run/DBG-geosweep.LOG`.
+- **Corrected-converter all-GEO rerun (2026-11-18).** An isolated current
+  build loaded and parsed all 29 generated GEO files: `loaded 29 skipped 0
+  failed 0`; every map reported 16×16, 256 cells and zero specials, and the
+  harness reloaded the entry area. Hatari exited with status 1 after the final
+  `continuing into jt948` marker, so no post-handoff behavior is claimed. The
+  build reused a staged `frua.rsc` because `UnlimitedAdventures.rfork` was
+  absent. Details and hashes: [`por-geo-sweeptest.md`](por-geo-sweeptest.md).
 - **Separate Hatari startup trace (2026-11-17, disposable stage).** Hatari 2.3.1
   executed `frua.prg` (SHA-256
   `AD786159AB110844ABA108A34BD1C875FE7B4A5795E6C03B12383494B6FDAFB8`) with a

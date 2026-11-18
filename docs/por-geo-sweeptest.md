@@ -129,6 +129,40 @@ and the handoff to the walk. The evidence proves that the 29 generated test
 GEO files were read and accepted by OpenUA's `jt198`/`l720a` path. It does not
 prove their authored semantics or that any map is playable.
 
+## Corrected-converter rerun (Hatari, 2026-11-18)
+
+I repeated the sweep against the current corrected converter output in an
+isolated source/build tree at
+`data/work/por-geosweep-isolated-20261118/`. The 29 test areas use the current
+`(14,10,west)` placeholder position; their sequential area ids and start area
+remain invented. The staged DSN had 29 GEO files and `GAME001.DAT`. All 30
+files were SHA-256 identical before and after Hatari.
+
+The isolated build used m68k-atari-mint-gcc 15.2.0 and the recipe above. Its
+`frua.prg` SHA-256 is
+`C951F10C4AB6136EC338456C448FB011F369436305ED8E61EA7312BAB3C22794`.
+The build reported that `UnlimitedAdventures.rfork` was absent, so it did not
+produce a new `frua.rsc`; the run reused the staged test resource file
+(`471176A5B28F66BBB530CFBD78D830F7ECBDCBB5FA092C5CC914BEC595110A36`).
+
+Hatari 2.3.1 logged 29 `begin`, 29 dimension and 29 `end` records, for ids
+001..029. Every map reported 16×16 dimensions, 256 cells and zero specials.
+The final records were:
+
+```text
+GEO-SWEEP loop done: loaded 29 skipped 0 failed 0
+GEO-SWEEP restore: entry level 001 reloaded, party cell 0,0 facing 4
+GEO-SWEEP end: continuing into jt948
+```
+
+Hatari exited with status 1 after these records and before the 45-second bound.
+The sweep and entry reload completed; the exit status leaves the engine state
+after the handoff to `jt948` unverified. The full log is
+`data/work/por-geosweep-isolated-20261118/run/DBG.LOG` (SHA-256
+`4AD92ADF2455E2D4B62E70B738781978F0CF5ACE36322C4D55C998527DBBF5DD`).
+This establishes parser/load acceptance for all 29 generated GEO files in
+this run. It does not establish gameplay or playability.
+
 ## Limits
 
 - Test harness only. It does not run the walk, check any area's content,
