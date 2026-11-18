@@ -107,10 +107,11 @@ cross-checks only; none of them is used as a PoR fact.
   [`por-ecl-menu-framing-probe.md`](por-ecl-menu-framing-probe.md)). The pinned
   classifier defaults both opcodes to a one-byte advance with zero classifier-parsed
   operands. In two RAM dumps, all six `2B:2A`/`2B:25` menu call sites map to the
-  parser at `GAME.OVR:0x74D3` and the adjacent lookup helper at `0x7609`; the handlers
-  pass parser counts 3 and 2. The helper's direct near-call closure has no direct
-  absolute `[0x49ED]` reference, but indirect cursor effects and execution are not
-  established. The complete menu framing and opcode semantics remain unresolved.
+  parser at `GAME.OVR:0x74D3` and lookup helper at `0x7609`; the two `2B:4D` calls map to
+  a word combiner at `0x7B82`. The handlers pass parser counts 3 and 2. The lookup helper's
+  direct near-call closure has no direct absolute `[0x49ED]` reference, but indirect cursor
+  effects and execution are not established. The complete menu framing and opcode semantics
+  remain unresolved.
 - **ECL opcode 0x21 dispatch** (`tools/por_ecl_21_dispatch_probe.py`, see
   [`por-ecl-21-dispatch-probe.md`](por-ecl-21-dispatch-probe.md)). The dispatcher
   arm has a direct `E8` edge to handler `0x19BA`, which makes eleven far calls.

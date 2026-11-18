@@ -26,6 +26,7 @@ misreading (see section 4); it does not yet decide anything.
 | Does the ECL classifier (`GAME.OVR:0x9379`) parse operands for 0x15 or 0x2B? | **No.** Both take its default arm: `inc [0x49ED]`, one byte, `operands_parsed: 0` | Concrete walk of the `cmp al,imm`/`jcc` chain (`classify`), checked on retail bytes |
 | What do the 0x15 and 0x2B handlers pass to the identified targets? | They call the parser `2B:2A` with literal counts 3 and 2, and the lookup helper `2B:25` with the same literal, then decrement `[0x49ED]` and call the parser again with the helper's returned byte | Handler byte walk plus the two-dump target cross-check |
 | Are `2B:2A` and `2B:25` resolved? | **Memory-byte identities cross-checked in two dumps:** `2B:2A` reaches the parser at `GAME.OVR:0x74D3`; `2B:25` reaches the adjacent lookup helper at `0x7609`. Execution and net cursor effect remain unestablished | Unique group mapping, live call operands and target bytes; see [the dump-chain probe](por-ecl-21-operand-helper-dump-probe.md) |
+| Is `2B:4D` resolved? | In both dumps it reaches the word combiner at `GAME.OVR:0x7B82`; its body combines the low bytes of two arguments and returns 4 argument bytes | Two live call sites, far-jump thunk and exact function-body match in the dump-chain probe |
 | What does `2B:2F` (index 22) resolve to? | `0x9379`, the classifier, under the zero-skew model. Its arity matches its callers (none pushed, none declared) | Same model; the arity match is the only positive evidence for it |
 | Is the classifier's caller known? | **Lead, not established.** Under the model, `2B:2F` is called at `GAME.OVR:0x40A3`, right before a call to the dispatch driver `0x3EB7`; a second caller is at `0x199B` | Byte sites |
 
@@ -129,6 +130,7 @@ The matched lookup helper takes an index byte at `[bp+6]` and reads three indexe
 | `0x9379` (via `2B:2F`) | `retf` 0 (plain, `0x9483`) | none (no `[bp+N]`) | none emitted at `0x199B` or `0x40A3`; the call before each (`2B:34`) took the one word pushed earlier, and whether that word is popped by `2B:34` is not verified | **match** (0 = 0), conditional on that stack state |
 | `0x74D3` (via `2B:2A`, dump identity) | `retf 2` (`0x7606`) | element count at `[bp+6]` | literal 3 for `0x15`, literal 2 for `0x2B`; second call receives the prior helper's returned byte | Target and count argument identified in bytes; full menu framing still depends on helper cursor effects and play-path reachability |
 | `0x7609` (via `2B:25`, dump identity) | `retf 2` (`0x7686`) | index byte at `[bp+6]`, used for three indexed DS arrays | literal 3 for `0x15`, literal 2 for `0x2B` | Target identified in dumps; bounded near-call closure has no direct absolute `[0x49ED]` reference, but indirect effects are not ruled out |
+| `0x7B82` (via `2B:4D`, dump identity) | `retf 4` (`0x7BA3`) | low bytes at `[bp+6]` and `[bp+8]`; returns `(byte [bp+6] << 8) | byte [bp+8]` | two words loaded from `DS:0x7086` and `DS:0x7046` before each call | Word-combining behavior identified; meaning of the result and execution are unestablished |
 
 The zero-skew model remains only a model for `2B:2F`. For `2B:2A` and `2B:25`, the dump cross-check supersedes the
 candidate targets. Their matched bodies explain the explicit arguments. Neither match proves execution. The `2B:25`
@@ -161,9 +163,8 @@ assumption.
 
 ## 5. Not established
 
-- Whether the identified `2B:2A` parser and `2B:25` helper execute at these call sites. Their identities are memory-byte
-  cross-checks, not execution observations. `2B:4D` remains unresolved (its stub is not in the run; the probe's
-  `seg_2b_calls` records that it has no stub).
+- Whether the identified `2B:2A` parser, `2B:25` lookup helper and `2B:4D` word combiner execute at these call sites.
+  Their identities are memory-byte cross-checks, not execution observations.
 - The net stream advance of `2B:25` and the full combined cursor effect of each menu handler. The bounded helper closure
   lacks a direct absolute reference to `[0x49ED]`, but indirect memory effects are not ruled out.
 - Whether the parser's count argument corresponds to the full menu operand count and whether the classifier's default

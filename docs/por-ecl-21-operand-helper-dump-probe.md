@@ -2,9 +2,9 @@
 
 **Status: memory-byte chain cross-check only. `playable: false`.** This probe follows the `002B:0025`
 far call in the PoR opcode-0x21 handler through the bytes in two existing RAM dumps. It also
-cross-checks the `002B:002A` and `002B:0025` call sites in the `0x15` and `0x2B` menu handlers, and
-records the helper's bounded direct near-call closure. It does not show that any handler or helper
-executed.
+cross-checks the `002B:002A`, `002B:0025`, and `002B:004D` call sites in the `0x15` and `0x2B` menu
+handlers, and records the getter's bounded direct near-call closure. It does not show that any handler
+or helper executed.
 
 ## Finding
 
@@ -42,6 +42,14 @@ trace or proof that the menu handlers ran. The parser at `0x74D3` is the procedu
 with an element-count argument at `[bp+6]`; the menu call sites push literal 3 for `0x15` and 2 for
 `0x2B` before calling it.
 
+The two `002B:004D` calls (`GAME.OVR:0x1C78` and `0x1E36`) also map in both dumps. Their live
+segment is `0x1891`; thunk `1891:004D` at linear `0x1895D` jumps to `40CC:06AF`, linear `0x4136F`.
+The 36-byte body there exactly matches `GAME.OVR:0x7B82..0x7BA5`, decodes to 16 instructions, and
+returns with `retf 4`. It zero-extends the low byte at `[bp+6]`, shifts it left eight bits, then ORs
+the low byte at `[bp+8]`. The call sites push values loaded from `DS:0x7086` and `DS:0x7046`, so
+the helper returns `(byte DS:0x7046 << 8) | byte DS:0x7086`. This identifies a word-combining
+operation; the resulting word's meaning is unknown.
+
 The lookup helper at `0x7609` and its direct near-call closure contain six complete procedures
 (`0x7609`, `0x82DF`, `0x7B82`, `0x7BCE`, `0x7C8F`, `0x7C29`; 494 instructions total). The decoder
 reports no far or indirect calls and no direct absolute reference to `[0x49ED]` in this bounded
@@ -62,6 +70,8 @@ advance through their combined helper sequence is not established.
 | Body SHA-256 | `0dd25983c54922e1ebe6f9f1b693f32c6a1c2b69199ddf110fc7d040134ec42b` |
 | Menu call sites | all six `0x15`/`0x2B` calls map to live `002A` parser and `0025` helper thunks in both dumps |
 | Parser body | 310-byte exact match to GAME.OVR `0x74D3..0x7608` |
+| `002B:004D` calls | both menu sites map to thunk `1891:004D`, then exact 36-byte body match to `0x7B82` |
+| `002B:004D` behavior | two low argument bytes combined as `arg6 << 8 | arg8`; `retf 4` |
 | Helper near closure | 6 complete procedures, 494 instructions, no far/indirect calls or direct absolute `[0x49ED]` reference |
 
 The tool's output is written under `data/work/por-ecl-21-operand-helper-dump-probe/` and contains
@@ -81,7 +91,8 @@ GEO archive, block or area; and any gameplay behavior.
 ## Verification
 
 `tests/test_por_ecl_21_operand_helper_dump_probe.py` includes synthetic falsifiers for the static call,
-fixup entries, all six menu call sites, the live segment, both thunks, parser/helper bodies, and a direct
-absolute cursor reference in the helper closure, plus a retail-gated check against the two local dumps.
+fixup entries, all six menu call sites, both `002B:004D` calls, the live segment, all three thunks,
+parser/getter/word-helper bodies, and a direct absolute cursor reference in the helper closure, plus a
+retail-gated check against the two local dumps.
 The procedure bytes are decoded using the repository's 8086 decoder. No emulator, DOSBox, GameLink,
 codewheel, or GoldBox data is used.

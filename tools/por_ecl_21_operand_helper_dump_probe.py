@@ -55,10 +55,18 @@ MENU_CALLS = {
     0x1CA8: (0x2A, "0x15-second"), 0x1E29: (0x2A, "0x2b-first"),
     0x1E41: (0x25, "0x2b-getter"), 0x1E51: (0x2A, "0x2b-second"),
 }
+WORD_CALLS = {0x1C78: "0x15-word-convert", 0x1E36: "0x2b-word-convert"}
 PARSER_THUNK_LINEAR = 0x1893A
 PARSER_THUNK = bytes.fromhex("ea 00 00 cc 40")
 PARSER_TARGET_LINEAR = PARSER_LINEAR
 MENU_LIVE_SEG = 0x1891
+WORD_THUNK_LINEAR = 0x1895D
+WORD_THUNK = bytes.fromhex("ea af 06 cc 40")
+WORD_TARGET_LINEAR = 0x4136F
+WORD_HELPER_FILE = 0x7B82
+WORD_HELPER_END = 0x7BA6
+WORD_HELPER_LEN = WORD_HELPER_END - WORD_HELPER_FILE
+WORD_HELPER_SHA256 = "53565df24104754f01dff68b10cf0dda3fe72ad394a5253c611ceb594d93e862"
 HELPER_ARRAYS = (0x7085, 0x7045, 0x7005)
 HELPER_RET = bytes.fromhex("ca 02 00")
 HELPER_EXPECTED_SHA256 = "0dd25983c54922e1ebe6f9f1b693f32c6a1c2b69199ddf110fc7d040134ec42b"
@@ -125,6 +133,18 @@ def analyze(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes]], *, pins: dic
         label + "_segment_fixup_listed": at - group["fileofs"] + 3 in fixups
         for at, (_, label) in MENU_CALLS.items()
     }
+    word_file_checks = {
+        label + "_call_bytes": ovr[at:at + 5] == bytes.fromhex("9a 4d 00 2b 00")
+        for at, label in WORD_CALLS.items()
+    }
+    word_fixup_checks = {
+        label + "_segment_fixup_listed": at - group["fileofs"] + 3 in fixups
+        for at, label in WORD_CALLS.items()
+    }
+    word_walk = dec.walk(ovr, WORD_HELPER_FILE)
+    word_end = max((i["at"] + len(bytes.fromhex(i["bytes"])) for i in word_walk["listing"]), default=-1)
+    word_complete = (word_walk["complete"] and word_end == WORD_HELPER_END and
+                     word_walk["returns"] == [{"at": WORD_HELPER_END - 3, "kind": "retf", "imm": 4}])
     file_checks = {
         "handler_group_file_offset": group["fileofs"] == GROUP_FILE,
         "handler_call_is_002b_0025": ovr[HANDLER_CALL:HANDLER_CALL + 5] == bytes.fromhex("9a 25 00 2b 00"),
@@ -144,6 +164,11 @@ def analyze(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes]], *, pins: dic
         "helper_near_closure_complete_without_direct_cursor_reference": helper_closure_ok,
         **menu_file_checks,
         **menu_fixup_checks,
+        "word_helper_decode_complete_to_retf4": bool(word_complete),
+        "word_helper_body_sha256": hashlib.sha256(ovr[WORD_HELPER_FILE:WORD_HELPER_END]).hexdigest()
+            == WORD_HELPER_SHA256,
+        **word_file_checks,
+        **word_fixup_checks,
     }
     rows = []
     for label, raw in dumps:
@@ -166,6 +191,9 @@ def analyze(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes]], *, pins: dic
             parser_thunk = dump.read(PARSER_THUNK_LINEAR, 5) if dump.covers(PARSER_THUNK_LINEAR, 5) else b""
             parser_in_dump = dump.covers(PARSER_LINEAR, PARSER_LEN)
             live_parser = dump.read(PARSER_LINEAR, PARSER_LEN) if parser_in_dump else b""
+            word_thunk = dump.read(WORD_THUNK_LINEAR, 5) if dump.covers(WORD_THUNK_LINEAR, 5) else b""
+            word_in_dump = dump.covers(WORD_TARGET_LINEAR, WORD_HELPER_LEN)
+            live_word_helper = dump.read(WORD_TARGET_LINEAR, WORD_HELPER_LEN) if word_in_dump else b""
             menu_sites = []
             for call_at, (operand, label) in MENU_CALLS.items():
                 site_linear = gmap["base_linear"] + (call_at - group["fileofs"])
@@ -181,6 +209,16 @@ def analyze(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes]], *, pins: dic
                                    "matches_expected": call[:3] == bytes((0x9A, operand, 0))
                                        and seg == MENU_LIVE_SEG and target_linear == expected_target
                                        and thunk_bytes == expected_thunk})
+            word_sites = []
+            for call_at, label in WORD_CALLS.items():
+                site_linear = gmap["base_linear"] + (call_at - group["fileofs"])
+                call = dump.read(site_linear, 5)
+                seg = u16(call, 3)
+                target_linear = seg * 16 + u16(call, 1)
+                word_sites.append({"label": label, "game_offset": call_at, "linear": site_linear,
+                                   "bytes": call.hex(" "), "target_linear": target_linear,
+                                   "matches_expected": call[:3] == bytes.fromhex("9a 4d 00")
+                                       and seg == MENU_LIVE_SEG and target_linear == WORD_THUNK_LINEAR})
             checks.update({
                 "group_unique_at_expected_base": True,
                 "mapped_call_bytes_match_far_call": call_bytes[:3] == bytes.fromhex("9a 25 00"),
@@ -200,6 +238,16 @@ def analyze(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes]], *, pins: dic
                     parser_in_dump and live_parser == ovr[PARSER_FILE:PARSER_END],
                 "parser_body_match_unique_in_game": parser_in_dump and live_parser == ovr[PARSER_FILE:PARSER_END]
                     and ovr.count(ovr[PARSER_FILE:PARSER_END]) == 1,
+                "word_thunk_is_far_jmp": word_thunk == WORD_THUNK,
+                "word_thunk_destination_is_40cc_06af":
+                    (u16(word_thunk, 3) * 16 + u16(word_thunk, 1) == WORD_TARGET_LINEAR)
+                    if word_thunk[:1] == b"\xEA" else False,
+                "word_calls_map_to_expected_thunk": all(site["matches_expected"] for site in word_sites),
+                "word_helper_memory_matches_game_body":
+                    word_in_dump and live_word_helper == ovr[WORD_HELPER_FILE:WORD_HELPER_END],
+                "word_helper_body_match_unique_in_game": word_in_dump
+                    and live_word_helper == ovr[WORD_HELPER_FILE:WORD_HELPER_END]
+                    and ovr.count(ovr[WORD_HELPER_FILE:WORD_HELPER_END]) == 1,
             })
             row["call"] = {"linear": call_linear, "bytes": call_bytes.hex(" "), "live_segment": seg_live,
                            "target_linear": target}
@@ -211,6 +259,11 @@ def analyze(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes]], *, pins: dic
             row["parser"] = {"linear": PARSER_LINEAR, "game_offset": PARSER_FILE,
                              "length": PARSER_LEN, "sha256": hashlib.sha256(live_parser).hexdigest(),
                              "bytes_match_game": parser_in_dump and live_parser == ovr[PARSER_FILE:PARSER_END]}
+            row["word_calls"] = word_sites
+            row["word_helper"] = {"linear": WORD_TARGET_LINEAR, "game_offset": WORD_HELPER_FILE,
+                                  "length": WORD_HELPER_LEN,
+                                  "sha256": hashlib.sha256(live_word_helper).hexdigest(),
+                                  "bytes_match_game": word_in_dump and live_word_helper == ovr[WORD_HELPER_FILE:WORD_HELPER_END]}
         else:
             checks["group_unique_at_expected_base"] = False
         row["status"] = "ok" if all(checks.values()) else "diagnostic"
@@ -234,6 +287,13 @@ def analyze(ovr: bytes, exe: bytes, dumps: list[tuple[str, bytes]], *, pins: dic
                                  "decode_complete": bool(parser_complete)},
                       "menu_calls": [{"game_offset": at, "operand": operand, "label": label}
                                      for at, (operand, label) in MENU_CALLS.items()],
+                      "word_calls": [{"game_offset": at, "label": label} for at, label in WORD_CALLS.items()],
+                      "word_helper": {"entry": WORD_HELPER_FILE, "end": WORD_HELPER_END,
+                                      "length": WORD_HELPER_LEN, "sha256": hashlib.sha256(
+                                          ovr[WORD_HELPER_FILE:WORD_HELPER_END]).hexdigest(),
+                                      "decode_complete": bool(word_complete),
+                                      "return_formula": "((byte [bp+6]) << 8) | byte [bp+8]",
+                                      "argument_cleanup": 4},
                       "helper_near_closure": helper_closure},
         "dumps": rows,
         "not_established": ["that the handler, menu handlers, parser, or getter executed",

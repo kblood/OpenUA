@@ -32,6 +32,9 @@ PARSER_BODY = bytes.fromhex(
     "eb 4e 3c 81 75 4a fe 46 fe ff 06 ed 49 a1 ed 49 c4 3e de 49 03 f8 26 8a 95 00 67 8a 46 ff 30 e4 8b f8 "
     "88 95 45 70 8a 46 ff 30 e4 8b f8 8a 85 85 70 50 8a 46 ff 30 e4 8b f8 8a 85 45 70 50 0e e8 9c 05 89 46 fc "
     "8a 46 fe 50 ff 76 fc 0e e8 da 11 8a 46 ff 3a 46 f9 74 03 e9 f3 fe ff 06 ed 49 89 ec 5d ca 02 00")
+WORD_HELPER_BODY = bytes.fromhex(
+    "55 89 e5 83 ec 02 8a 46 08 30 e4 8b d0 8a 46 06 30 e4 b1 08 d3 e0 03 c2 89 46 fe "
+    "8b 46 fe 89 ec 5d ca 04 00")
 
 
 def _descriptor(exe, off, fileofs, codesz, fixupsz, jmpcnt=0):
@@ -44,27 +47,35 @@ def fixture():
     exe = bytearray((i * 19 + 7) & 255 for i in range(0x1000))
     codesz, body = 0x350D, p.HANDLER_CALL - p.GROUP_FILE
     fixups = [body + 3] + [at - p.GROUP_FILE + 3 for at in p.MENU_CALLS]
+    fixups.extend(at - p.GROUP_FILE + 3 for at in p.WORD_CALLS)
     _descriptor(exe, p.GROUP_DESC, p.GROUP_FILE, codesz, len(fixups) * 2)
     code = memoryview(ovr)[p.GROUP_FILE:p.GROUP_FILE + codesz]
     code[body:body + 5] = bytes.fromhex("9a 25 00 2b 00")
     for at, (operand, _) in p.MENU_CALLS.items():
         code[at - p.GROUP_FILE:at - p.GROUP_FILE + 5] = bytes((0x9A, operand, 0, 0x2B, 0))
+    for at in p.WORD_CALLS:
+        code[at - p.GROUP_FILE:at - p.GROUP_FILE + 5] = bytes.fromhex("9a 4d 00 2b 00")
     for i, fixup in enumerate(sorted(fixups)):
         struct.pack_into("<H", ovr, p.GROUP_FILE + codesz + i * 2, fixup)
     ovr[p.HELPER_FILE:p.HELPER_END] = BODY
     ovr[p.PARSER_FILE:p.PARSER_END] = PARSER_BODY
     # Minimal far-returning stand-ins for the helper's near-call targets. The
     # retail-specific complete closure is exercised by the gated test.
-    for target in (0x82DF, 0x7B82, 0x7BCE, 0x7C8F, 0x7C29):
+    for target in (0x82DF, 0x7BCE, 0x7C8F, 0x7C29):
         ovr[target:target + 3] = bytes.fromhex("ca 02 00")
+    ovr[p.WORD_HELPER_FILE:p.WORD_HELPER_END] = WORD_HELPER_BODY
 
     dump = bytearray(0x100000)
     dump[p.GROUP_BASE:p.GROUP_BASE + codesz] = code
     struct.pack_into("<H", dump, p.GROUP_BASE + body + 3, p.LIVE_SEG)
     for at in p.MENU_CALLS:
         struct.pack_into("<H", dump, p.GROUP_BASE + at - p.GROUP_FILE + 3, p.MENU_LIVE_SEG)
+    for at in p.WORD_CALLS:
+        struct.pack_into("<H", dump, p.GROUP_BASE + at - p.GROUP_FILE + 3, p.MENU_LIVE_SEG)
     dump[p.PARSER_THUNK_LINEAR:p.PARSER_THUNK_LINEAR + 5] = p.PARSER_THUNK
     dump[p.PARSER_LINEAR:p.PARSER_LINEAR + len(PARSER_BODY)] = PARSER_BODY
+    dump[p.WORD_THUNK_LINEAR:p.WORD_THUNK_LINEAR + 5] = p.WORD_THUNK
+    dump[p.WORD_TARGET_LINEAR:p.WORD_TARGET_LINEAR + len(WORD_HELPER_BODY)] = WORD_HELPER_BODY
     dump[p.THUNK_LINEAR:p.THUNK_LINEAR + 5] = p.THUNK
     dump[p.HELPER_LINEAR:p.HELPER_LINEAR + len(BODY)] = BODY
     pins = {"GAME.OVR": {"size": len(ovr), "sha256": hashlib.sha256(ovr).hexdigest()},
@@ -162,13 +173,42 @@ def test_menu_call_without_listed_segment_fixup_is_diagnostic():
     assert result["file_side"]["checks"]["0x15-first_segment_fixup_listed"] is False
 
 
+def test_2b4d_word_helper_body_mutation_is_diagnostic():
+    ovr, exe, dump, pins = fixture()
+    changed = bytearray(dump)
+    changed[p.WORD_TARGET_LINEAR + 10] ^= 1
+    result = check(ovr, exe, bytes(changed), pins)
+    assert result["dumps"][0]["checks"]["word_helper_memory_matches_game_body"] is False
+
+
+def test_2b4d_formula_is_reported_with_four_byte_cleanup():
+    result = check()
+    word_helper = result["file_side"]["word_helper"]
+    assert word_helper["return_formula"] == "((byte [bp+6]) << 8) | byte [bp+8]"
+    assert word_helper["argument_cleanup"] == 4
+
+
+def test_2b4d_file_body_hash_falsifier():
+    ovr, exe, dump, pins = fixture()
+    changed = bytearray(ovr)
+    changed[p.WORD_HELPER_FILE + 10] ^= 1
+    pins = {"GAME.OVR": {"size": len(changed), "sha256": hashlib.sha256(changed).hexdigest()},
+            "START.EXE": pins["START.EXE"]}
+    result = check(bytes(changed), exe, dump, pins)
+    assert result["file_side"]["checks"]["word_helper_body_sha256"] is False
+
+
 def test_parser_live_body_and_menu_thunks_are_cross_checked():
     result = check()
     row = result["dumps"][0]
     assert row["checks"]["parser_memory_matches_complete_game_body"] is True
     assert row["checks"]["menu_2b_calls_map_to_expected_thunks"] is True
+    assert row["checks"]["word_calls_map_to_expected_thunk"] is True
+    assert row["checks"]["word_helper_memory_matches_game_body"] is True
     assert len(row["menu_calls"]) == 6
     assert all(site["matches_expected"] for site in row["menu_calls"])
+    assert len(row["word_calls"]) == 2
+    assert all(call["target_linear"] == p.WORD_THUNK_LINEAR for call in row["word_calls"])
     closure = result["file_side"]["helper_near_closure"]
     assert all(item["complete"] and not item["far_calls"] and not item["indirect"]
                and not item["direct_absolute_cursor_reference"] for item in closure)
