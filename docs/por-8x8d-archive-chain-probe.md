@@ -104,16 +104,19 @@ linear address equal to the stub (`0x42DE - 0x200`).
 
 | Image | Sites | By AH | Notes |
 | --- | ---: | --- | --- |
-| `START.EXE` | 58 | `3D`×1 (`0x0A8B6`), `3E`×3, `3F`×5, `42`×9, unknown×8 | AH taken from the immediate predecessor only |
+| `START.EXE` | 58 | `3D`×1 (`0x0A8B6`), `3E`×3, `3F`×5, `42`×9, unknown×8 | AH taken from the immediate predecessor only; see the follow-up entry walk |
 | `GAME.OVR` | 0 | none | all DOS I/O is in START |
 
-- `0x0A8B6` (open, AH=3Dh): **not contained** in any prologue-entered, ret-complete walk. The enclosing
-  routine's entry is not established.
+- `0x0A8B6` (open, AH=3Dh): the original prologue-only scan did not contain it. A follow-up non-prologue
+  entry walk identifies helper `0x0A89E`, copies the Pascal name from `[bp+6]`, and reaches this open through
+  three decoded near-call sites. This establishes an open helper, not an 8X8D archive open; its caller chain
+  does not identify the archive name. See [`por-8x8d-dos-sites-probe.md`](por-8x8d-dos-sites-probe.md).
 - `0x0A77A` (read, AH=3Fh): contained by the routine at `0xA728` (85 instructions, ret-complete). That routine
   reads the first 8 bytes of a file and compares them with `MZ` (`0x5A4D`), `FB` (`0x4246`) and `OV` (`0x564F`),
   then sets vector 3Fh with `mov ax,0x253f; int 21h`. GAME.OVR begins with `46 42 4F 56` (`FBOV`). **So this
   read is the overlay manager's header probe, not a DAX read.**
-- `0x0A9B5`, `0x0A9D6`, `0x0B333`, `0x0B374` (reads): **not contained** by a prologue-entered routine.
+- `0x0A9B5`, `0x0A9D6`, `0x0B333`, `0x0B374` (reads): follow-up entry walks contain these in four routines,
+  but their connection to a DAX archive remains unresolved. Five INT 21h sites also have unresolved AH.
 
 ---
 
@@ -138,7 +141,9 @@ or read. Depth 2 from R's callees reaches no INT 21h.
 - **U1** callers of `START 0x7245`: not-established (no E8 and no linear 9A).
 - **U2** callers of `GAME.OVR 0x32270` and its stub: not-established.
 - **U3** far calls `0x0802:0x0716`, `0x0AF8:0x0254` and R's far callees: model-conditional.
-- **U4** the routine that contains the open at `0x0A8B6` and the reads at `0x0A9B5`, `0x0A9D6`, `0x0B333`, `0x0B374`: not-established.
+- **U4** the relationship of the open helper and four read sites to an 8X8D/DAX request: not-established.
+  The open helper at `0x0A89E` and its three E8 callers are decoded; the routine supplying its Pascal filename
+  and the read handles' purpose are still unresolved. See [`por-8x8d-dos-sites-probe.md`](por-8x8d-dos-sites-probe.md).
 - **U5** which archive the block-201 request reads from: not-established (the name copies have no consumer).
 - **U6** meaning of `[bp+6]`, `[bp+8]` and the slot words: not-established (`0x0464:0x0111` not entered).
 - **U7** use of `CS:0x39` (the `-` string) and how the name is assembled: not-established.
@@ -195,8 +200,8 @@ python -m pytest tests/test_por_8x8d_archive_chain_probe.py -q
 
 ## Next discriminating observation
 
-Static, bounded: decode the routine that contains `0x0A8B6` with a non-prologue entry search (the TP
-RTL `Reset` path), then find its callers. Trace what `0x0464:0x0111` and `0x0AF8:0x0DC0` do if their
+Static, bounded: find indirect and jump-based callers of `0x0A728`, `0x0A97E` and `0x0B360`, then resolve
+the caller's filename and the read handles. Trace what `0x0464:0x0111` and `0x0AF8:0x0DC0` do if their
 targets can be fixed by a stub or an MZ-consistent base. A live run that stops at the start of `0x32270` and
 at `0x3230B` and dumps the selector `DS:[0x5376]`, the words at `DS:[0x5E3A + 4n]`, and the first archive name
 would settle U5, U6 and U7. That observation is not run here.

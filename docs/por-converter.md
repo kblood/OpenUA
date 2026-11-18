@@ -123,9 +123,12 @@ cross-checks only; none of them is used as a PoR fact.
   [`por-8x8d-archive-chain-probe.md`](por-8x8d-archive-chain-probe.md)). A bounded
   static trace found a START routine that requests block 201 beside `8X8d1` and a
   VROOMM routine that reads the GEO selector and calls an unresolved loader-shaped
-  target. Neither has an established caller, file handle, or DAX block read; the
-  image-relative far-call mapping remains a model. This is a bounded negative, not
-  evidence that PoR never reads 8X8D or that these routines cannot run.
+  target. A follow-up entry walk found START's DOS open helper and four DOS read
+  sites, but did not connect them to an 8X8D archive; the five unresolved DOS-call
+  AH sites and far-call image model remain open. No 8X8D caller, file handle, or DAX
+  block read is established. This is a bounded negative, not evidence that PoR never
+  reads 8X8D or that these routines cannot run. See
+  [`por-8x8d-dos-sites-probe.md`](por-8x8d-dos-sites-probe.md).
 - **Group-29 WALLDEF target** (`tools/por_wall_group29_target_probe.py`, see
   [`por-wall-group29-target-probe.md`](por-wall-group29-target-probe.md)). The one
   runtime run observed a `0x2E8F7` seek and `0x120B`-byte read. The `33E7:05FD`
