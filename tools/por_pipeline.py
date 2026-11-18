@@ -143,7 +143,7 @@ OWNED_OUTPUTS = ("maps", "designs", ECL_CENSUS_DIR, ECL_DIAG_DIR,
 
 UNSUPPORTED = [
     "No FRUA art binding: walls use the dsn.py ART_BLOCK; PoR wall art is unresolved.",
-    "Door passability is provisional: the current mapping is a GoldBox CoK-derived assumption; PoR plane-3 evidence has not established these rules.",
+    "Door mapping: one cited PoR DOS route reports a flag-2 locked door and successful Bash crossing; the GEO-to-reader binding and general flag-2 rule remain unproven. Flag 3 is a CoK/other-title hypothesis; flags 2 and 3 currently map to OpenUA passability 15.",
     "No events, text, monsters, items, shops or campaign logic.",
     "Entry points come from the plan only; none are recovered from the install.",
     "No runtime check: nothing here boots OpenUA or walks the emitted design.",

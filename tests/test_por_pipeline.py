@@ -84,12 +84,13 @@ def test_full_run_decodes_every_block_and_round_trips_design(tmp_path):
     assert s["designs_ok"] == 1 and s["designs_failed"] == 0
     assert manifest["playable"] is False
     assert manifest["install"]["unchanged"] is True
-    assert any("GoldBox CoK-derived assumption" in item
-               and "PoR plane-3 evidence has not established" in item
+    assert any("one cited PoR DOS route reports a flag-2 locked door" in item
+               and "GEO-to-reader binding and general flag-2 rule remain unproven" in item
+               and "Flag 3 is a CoK/other-title hypothesis" in item
                for item in manifest["unsupported"])
     report = (out / "por_pipeline_report.md").read_text(encoding="utf-8")
-    assert "GoldBox CoK-derived assumption" in report
-    assert "PoR plane-3 evidence has not established these rules" in report
+    assert "one cited PoR DOS route reports a flag-2 locked door" in report
+    assert "GEO-to-reader binding and general flag-2 rule remain unproven" in report
     d = manifest["designs"][0]
     assert d["checks"] == {"parses": True, "byte_round_trip": True, "entry_point": True}
     assert (out / "por_pipeline.json").is_file()
@@ -764,8 +765,8 @@ def test_two_area_design_is_one_folder_with_two_round_tripped_geos(tmp_path):
     raw6 = (dsn / "GEO006.DAT").read_bytes()
     g5, g6 = Geo.parse(raw5), Geo.parse(raw6)
     assert g5.build() == raw5 and g6.build() == raw6
-    assert g5.entry_point(0) == (5, 3, 1)     # area 5: entry [3,5] facing east
-    assert g6.entry_point(0) == (2, 1, 2)     # area 6: entry [1,2] facing south
+    assert g5.entry_point(0) == (5, 3, 2)     # area 5: entry [3,5] facing east
+    assert g6.entry_point(0) == (2, 1, 4)     # area 6: entry [1,2] facing south
     # Standalone map reports are still written for every source block.
     assert len(list((out / "maps").iterdir())) == 8
     assert manifest["summary"]["blocks_decoded"] == 8
