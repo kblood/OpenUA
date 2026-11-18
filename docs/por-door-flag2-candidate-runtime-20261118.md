@@ -106,3 +106,26 @@ To generate an opt-in candidate from the converter, pass
 `--candidate-flag2-passable 2`. Omitting it preserves pre-option output bytes
 exactly. See `tests/test_por_map_flag2_candidate.py` and
 `tests/test_por_flag2_diag_guard.py` for the byte and guard checks.
+
+### Standard pipeline reproduction
+
+The tested candidate GEO was also reproduced through `por_pipeline.py` using a
+one-area plan for GEO2.DAX TOC 2 / block id 20, entry `(14,10)`, facing west,
+and `--candidate-flag2-passable 2`. The pipeline decoded 29/29 source blocks,
+emitted 1/1 designs, and reported loader-equivalent `pass`. Its
+`GEO020.DAT` SHA-256 is
+`B8C35F0F5F524CE077B78E517D0AB65809A966C2BC009444D68069E1DE191644`, exactly
+matching the transposed candidate fixture used by the successful Hatari run.
+This establishes repeatable production of the tested GEO bytes. The pipeline
+report still says `runtime_loaded: false` and `engine_executed: false`; the
+runtime result comes from the separate Hatari run above. `GAME001.DAT` differs
+between the pipeline output and the runtime fixture, so this is a GEO-byte
+match, not a claim that the complete design folders are identical.
+
+Reproduction command (from the repository root):
+
+```text
+tools/.venv/Scripts/python.exe tools/por_pipeline.py --install "G:\\Games\\Pool of Radiance\\POOLRAD" -o data/work/por-flag2-pipeline-check-20261118/route --plan data/work/por-flag2-pipeline-check-20261118/route-plan.json --candidate-flag2-passable 2
+```
+
+The generated report and design are under the ignored `data/work/por-flag2-pipeline-check-20261118/` folder. Its plan is a bounded test plan and retains `playable: false` and the unproven block-to-area join.
