@@ -1,12 +1,22 @@
 # Pool of Radiance GEO2 block 20 flag-2 door: runtime parity attempt (2026-11-18)
 
-**Status: TEST-ONLY DSN GENERATED; NOT RUN IN ANY EMULATOR.**
-`playable: false`. The area and entry are invented; runtime and parity remain
-unverified.
+**Status: PARTIAL RUNTIME CHECK. Two different harnesses; keep them apart.**
+
+- **Stage 0b one-block fixture** (placeholder area 5, `TG2I002.DSN`): host
+  container checks only. This fixture was **not** loaded in any emulator.
+- **Area-20 all-map harness** (`POR2NEW.DSN`, area 20, `data/work/por-flag2-openua-runtime-20261118-o/`):
+  run in Hatari 2.3.1. It loaded GEO020 and read the converted west edge as
+  passability 15 at `(14,10)` facing west. Up/Return selected menu item 0, but
+  the item was not allowed, and no successful Bash crossing or persistent
+  opening was demonstrated.
+
+Both are test-only. `playable: false`. The areas and entries are invented
+test fixtures. Runtime parity with the PoR DOS door behaviour is **not**
+established.
 
 This note records how far one bounded parity experiment could go on this host,
-and the exact boundary where it stopped. It does not claim that OpenUA
-reproduces the PoR door behaviour.
+and where it stopped. It does not claim that OpenUA reproduces the PoR door
+behaviour.
 
 ## Question
 
@@ -25,12 +35,12 @@ party to `(13,10)` and leave the edge open?
 | Stage | Result | Evidence |
 | --- | --- | --- |
 | 0. Generated edge (host, static) | **Observed** | `data/work/por-geo2-b20-door-parity-20261118/static-check.txt` |
-| 0b. One-area DSN fixture (host) | **Generated and checked** | `data/work/por-pipeline/geo2-b20-entry-14-10-west/designs/TG2I002/TG2I002.DSN` |
-| 0c. Host loader-equivalent smoke check | **Pass** | `data/work/por-geo-single-block-plan/geo2-b20-entry-14-10-west/load_smoke_review.json` |
-| 1. Engine source path to the menu | **Read, not executed** | `src/engine/boot.c` (see below) |
-| 2. Current build with a resource fork | **Blocked** | see "Build blockers" |
-| 3. Emulator with key input | **Blocked** | see "Emulator blockers" |
-| 4. Menu shown / Bash moves party | **Not reached** | depends on 2 and 3 |
+| 0b. One-area DSN fixture (host, area 5) | **Generated and checked; not run in an emulator** | `data/work/por-pipeline/geo2-b20-entry-14-10-west/designs/TG2I002/TG2I002.DSN` |
+| 0c. Host loader-equivalent smoke check (area 5 fixture) | **Pass** | `data/work/por-geo-single-block-plan/geo2-b20-entry-14-10-west/load_smoke_review.json` |
+| 1. Engine source path to the menu | **Read; partly exercised by the area-20 harness** | `src/engine/boot.c` (see below) |
+| 2. Build for the runtime check | **Clone build ran; repo build still blocked** | see "Build status" |
+| 3. Emulator with key input | **Ran for the area-20 harness** | Hatari 2.3.1, `--cmd-fifo`; see "Area-20 all-map runtime harness" |
+| 4. Menu shown / Bash moves party | **Partly reached.** Item 0 selected, not allowed; no Bash success, no visible `Blocked:` text read, no persistence | `DBG.LOG` lines 86-107 |
 
 ### Stage 0: the generated edge (observed)
 
@@ -43,7 +53,8 @@ fixture listed in stage 0b.
   door 2. This matches the GoldBox note's raw bytes.
 - `tools/por_map.py` `map_edge(10, 2)` returns `(0xFA, "locked")`, that is
   passability 15 with slot 10. The pipeline report counts this as
-  "blocked edge (15)".
+  "blocked edge (15)". The current static check output agrees
+  (`map_edge(10,2) = (250, 'locked')`).
 - The test-only plan adapter emits one module folder for this block and
   position. The placeholder area number is 5, copied from the smoke-plan
   convention; it is not an authentic PoR area. Its output passes the pipeline's
@@ -56,8 +67,9 @@ which `map_edge` maps to `0x15` ("auto-door", passable). The west edge of
 `(14,10)` is `0xFA`. So the one physical wall has two different OpenUA bytes,
 one on each side. The report's shared-edge stats show 74 disagreements in this
 block. This is a converter property, not something the runtime was seen to do.
-If the engine checks only the edge of the cell being left, then walking east
-from `(13,10)` is not blocked by this door. Not verified at runtime.
+The area-20 harness read the west byte of `(14,10)` when moving forward, but it
+did not test the east side of `(13,10)`. Whether walking east from `(13,10)` is
+blocked by this door is not verified at runtime.
 
 ### Stage 1: source path to the Blocked menu (read only)
 
@@ -67,55 +79,119 @@ from `(13,10)` is not blocked by this door. Not verified at runtime.
 - The forward step uses `play_forward_allowed` (`boot.c:53028`). That calls
   `jt955_dungeon_decide()`, and sets `g_event_modal_shown` for `t == 15`
   ("a Blocked: menu ran"). So the forward path does reach a menu for nibble 15.
+  The area-20 harness logged this path (`DOOR forward edge=15`).
 - The menu, `l45f0_menu` (`boot.c:~52924`), builds its option list from state:
   FORCE only if `-22726` is armed; PICK only if `-22725` is armed and a thief
   (class 6) is aboard; USE-KEY only if a type-31 key is carried; LEAVE always.
   The prompt is the string at `0x6cfc` ("Blocked:") for wall arts 2/3/15.
-- The engine source contains no "Bash" verb. The PoR prompt `BASH PICK EXIT`
-  has no counterpart in the menu as coded. Which options appear by default
-  depends on flag values that were not read at runtime. So the menu contents
-  are **not** shown to match PoR.
+  These line numbers come from the earlier read and were not re-checked in this
+  edit.
+- The word "bash" does not appear as a literal in `src/engine/boot.c`
+  (checked by search in this edit). Menu wording is therefore carried by
+  resource strings, which were not read here. The semantics note reads item 0
+  as the force/Bash check. The runtime harness confirms that item 0 is what
+  Return selected; it does not show the item's label.
+- The PoR prompt `BASH PICK EXIT` is not shown to match OpenUA's menu. Which
+  options appear by default depends on flag values not read at runtime.
 - After a menu action, the result lands in `-22308` (`play_forward_allowed`
-  reads it back as the move decision). Not verified at runtime.
+  reads it back as the move decision). In the harness the result was 0
+  (`DOOR forward allowed=0`).
 
-**Persistence.** `docs/por-geo-door-semantics.md` records that OpenUA has no
-door state: flags 2 and 3 both become a bash/knock blocked edge. Nothing in the
-map or the converter opens `(14,10)` west after a successful interaction. So
-even a working menu would not reproduce the persisted opening. This is a
-known design gap, not a new finding.
+**Persistence.** `docs/por-geo-door-semantics.md` records that OpenUA does not
+yet persist a successfully opened edge: the current Bash path only reports
+success to the movement gate. Nothing in the map or the converter opens
+`(14,10)` west after a successful interaction. So even a working menu would
+not reproduce the persisted opening. This is a known design gap, not a new
+finding.
 
-### Stage 2: build blockers (observed)
+## Area-20 all-map runtime harness (2026-11-18)
 
-- `build/` does not exist. `frua.prg` is at the repo root, last written
-  2026-11-17 19:49. `src/engine/boot.c` was modified at 2026-11-17 20:40 and
-  has uncommitted changes. **The binary is older than the source and cannot
-  stand for the current tree.**
-- `data/work/UnlimitedAdventures.rfork` does not exist. The Makefile needs it
-  (`Makefile:297`, `RFORK ?= data/work/UnlimitedAdventures.rfork`). Producing it
-  requires unpacking the Mac release (see `docs/mac-release.md`), which was not
-  done.
-- Neither Windows nor WSL Ubuntu has `m68k-atari-mint-gcc` or
-  `m68k-atari-mint-objdump` on PATH, so a fresh `make` cannot run here.
+This is the later runtime check. It is **separate from** the stage 0b one-block
+fixture above.
 
-### Stage 3: emulator blockers (observed)
+- Fixture: `POR2NEW.DSN`, area 20, the converted `GEO020` for block 20. The
+  design starts at `(col=14,row=10)` facing west (code 6). The target cell
+  stores N/E/S/W bytes `00 00 E7 FA`; the west byte is `0xFA`. No campaign
+  content.
+- Build: a clone of `frua.prg` with `FRUA_AREATEST`, `FRUA_SKIP_ENTRY_EVENTS`,
+  `FRUA_GEO_SWEEPTEST`, and `FRUA_DOOR_DIAG`. The binary is
+  `data/work/por-flag2-openua-runtime-20261118-o/frua.prg`. The sweep is
+  test-only and invents area ids 1..29.
+- Emulator: Hatari 2.3.1, STE, 14 MB, EmuTOS 512k, input from `--cmd-fifo`
+  (`run-door-test-o.sh`). The Hatari binary is the WSL copy under
+  `data/work/atari-runtime-bootstrap/hatari-root/`.
+- Sweep result (`DBG.LOG` lines 14-77): GEO020 loaded (`width 16 height 16
+  cells 256 specials 0`). The loop reported **loaded 1, skipped 28, failed 0**.
+  The run then continued into `jt948`.
+- Up event (`DBG.LOG` lines 86-96): `DOOR forward row=10`, `col=14`,
+  `facing=6`, `edge=15`. The engine read the converted west edge as
+  passability 15. This is the corrected facing and edge ordering (N/E/S/W),
+  not the earlier fixture that encoded `west` as facing 3.
+- Return event (`DOOR menu pick=0`, `DOOR menu edge=15`, `DOOR menu
+  allowed=0`, `DOOR forward allowed=0`). A second Up/Return pass (lines
+  97-107) repeated the same four lines. Item 0 was selected both times and was
+  not allowed.
+- Not shown: the screen capture (`shots-q/`) shows the first-person view but no
+  readable `Blocked:` menu text. Whether Pick is selectable in this harness was
+  not established.
+- Not shown: a successful Bash crossing, the party moving to `(13,10)`, or a
+  persisted opening. The bounded test party did not succeed.
 
-- Hatari is not installed on this Windows host. `where hatari`, PATH, and
-  `C:\Program Files\Hatari` were all empty.
-- WSL Ubuntu also has no `hatari` command. The extracted Linux `.deb` binary
-  under `data/work/por-hatari-input-probe-deb/` was not run.
-- The key-input route in `docs/por-hatari-input-probe.md` (`--cmd-fifo`) has
-  never been run. It needs a Linux host with a FIFO, and the doc says "not
-  verified at runtime".
-- The generated fixture is a map-only host artifact. It has not been loaded by
-  OpenUA in an emulator.
+The PoR DOS run still provides the separate observation of a failed Pick
+followed by a successful Bash ([por-geo-door-semantics.md](por-geo-door-semantics.md#por-original-game-runtime-observation-flag-2)).
+The area-20 harness does not reproduce that sequence.
 
-## Test-only area and entry
+## Static door-entry census (negative bounded result)
+
+[`por-door-entry-route-census.md`](por-door-entry-route-census.md) decoded
+transfers into the door writer `GAME.OVR:0x167D4`, clearer `0x166CB`, and stub
+1 (START `0x0089C`, proc `0x17438`). In the walked bytes it found **no decoded
+`E9`/`EB` jump, `EA` far jump, or `9A` far call** into the writer, clearer, or
+stub 1. The six `E8` callers are the ones the earlier caller probe already
+reported. Its own status is `trigger_established: false`.
+
+This is a negative, bounded static result. It does not identify the event that
+sets or clears the door field, and it does not resolve the event semantics of
+flag 2 or flag 3. The census also reports no decoded `E8` call to stub 1's proc;
+the six `E8` calls are to the writer and clearer only. It is not runtime
+evidence.
+
+## Test-only area and entry (one-block fixture, stage 0b)
 
 The fixture assigns placeholder area 5 (`dsn.demo_design` convention), not a
 PoR area number, and labels it `invented-test-only`. The start point `(14,10)`
 facing west (direction 6) is taken from the cited trace and labelled test-only;
 the plan cannot prove that it is the game's authentic start. Reproduction steps
 are in [por-geo-single-block-plan.md](por-geo-single-block-plan.md).
+
+The area-20 harness above uses a different area and design (`POR2NEW.DSN`).
+
+## Build status
+
+- The repo build is still not reproducible here. `build/` does not exist, and
+  `data/work/UnlimitedAdventures.rfork` does not exist. The Makefile needs it
+  (`Makefile:297`, `RFORK ?= data/work/UnlimitedAdventures.rfork`). Producing it
+  requires unpacking the Mac release (see `docs/mac-release.md`), which was not
+  done. A fresh `make` therefore still cannot run from the Makefile.
+- The root `frua.prg` was last written 2026-11-18 05:38, which is **newer** than
+  `src/engine/boot.c` (2026-11-17 20:40). The older blocker "the binary is older
+  than the source" no longer holds on mtimes. Whether that root binary was built
+  from the current tree was not verified.
+- The area-20 runtime used the clone binary in its run directory (stage 2
+  above), not the repo root binary.
+- The `m68k-atari-mint` toolchain availability was not re-checked in this edit.
+  The earlier note reported it absent on PATH; treat that as unverified now.
+
+## Emulator status
+
+- The earlier note said Hatari was absent. That was true for the Windows host
+  PATH (`where hatari` finds nothing in this edit). It does not hold for the
+  2026-11-18 run, which used the Hatari 2.3.1 binary under
+  `data/work/atari-runtime-bootstrap/hatari-root/` through WSL.
+- The `--cmd-fifo` key-input route in
+  [`por-hatari-input-probe.md`](por-hatari-input-probe.md) was used by the
+  area-20 harness. The probe doc itself still says "Hatari was not launched" for
+  its own validator. Its generator and validator remain separate from this run.
 
 ## Verification run
 
@@ -136,6 +212,10 @@ tools/.venv/Scripts/python.exe tools/por_dsn_load_smoke.py \
     data/work/por-pipeline/geo2-b20-entry-14-10-west/designs/TG2I002/TG2I002.DSN \
     --report data/work/por-geo-single-block-plan/geo2-b20-entry-14-10-west/load_smoke_review.json
 #  -> verdict pass; engine_executed=false; runtime_loaded=false
+
+# area-20 all-map Hatari run (runtime, test-only clone build):
+#   data/work/por-flag2-openua-runtime-20261118-o/run-door-test-o.sh
+#   evidence: data/work/por-flag2-openua-runtime-20261118-o/DBG.LOG lines 14-107
 ```
 
 Running `pytest -k` over all of `tests/` failed at collection on three test
@@ -145,24 +225,31 @@ them). That is unrelated to this note and was not fixed here.
 ## What would settle it
 
 1. Build the current tree with the rfork present and check `frua.prg` is newer
-   than `src/engine/boot.c`.
-2. On a Linux host with Hatari 2.x and the 68k toolchain, run `frua.prg` with `--cmd-fifo`. Generate
-   the key lines with `tools/por_hatari_input_probe.py generate` and write them
-   with a bounded writer.
-3. Put the party at `(14,10)` facing west in a test fixture. Then record the
-   menu text and option list (screenshot or `dbg.log` marker), and whether Bash
-   moves the party to `(13,10)`.
+   than `src/engine/boot.c`. The root binary is already newer on mtime; a
+   rebuild from the Makefile is still needed to tie it to the source.
+2. Read the menu wording and option list for item 0 (the `0x6cfc` resource
+   strings). Capture the first-person view with the Blocked prompt visible,
+   since `shots-q/` shows no readable text.
+3. Show a successful Bash in the area-20 harness: the party moves to `(13,10)`,
+   and the `(14,10)` west edge is open afterwards. Today OpenUA does not
+   persist that edge, so this step also needs a persistence change, which is
+   outside this note.
+4. Separately, the event that sets or clears the door field is still open. The
+   static census above does not settle it.
 
-Until steps 1-3 are done, the honest finding is: **the generated fixture passes
-host-side container checks; source routes passability 15 to OpenUA's Blocked
-menu, but OpenUA has no PoR Bash verb or persisted opening in this path, and
-there is no runtime observation.**
+Until those are done, the honest finding is: **the generated edge reaches
+OpenUA's passability-15 forward gate in the area-20 all-map harness, and the
+Blocked menu's item 0 is selected and refused. No successful Bash, visible menu
+text, or persisted opening is demonstrated, and no PoR parity is claimed.**
 
 ## Not claimed
 
 - That OpenUA shows `LOCKED. BASH PICK EXIT` or any PoR menu wording.
-- That Bash moves the party, or that the edge stays open afterwards.
+- That Bash moves the party, that Pick succeeds, or that the edge stays open
+  afterwards.
 - That the shared-edge disagreement changes play. It is a static observation.
+- That the static door-entry census identifies the trigger for the door
+  field, or the event semantics of flag 2 or flag 3.
 - Anything about flag 3 or any other GEO block.
 - That the PoR trace was re-run. It is cited from the GoldBox note and was not
   reproduced here.
