@@ -455,6 +455,13 @@ Full notes and limits: [`por-geo-all-map-group.md`](por-geo-all-map-group.md).
   passed the host loader-equivalent check. All 90 output files had identical
   SHA-256 values between runs. The manifest keeps the invented area/start labels
   and `runtime_loaded: false`; this is not a gameplay or runtime-load claim.
+- **Corrected-converter rerun (2026-11-18).** Regenerated the test-only all-GEO
+  plan from the pinned retail install with one `14,10,west` test position, then
+  ran the current pipeline. It decoded 29/29 blocks; the grouped design passed
+  loader-equivalent checks with 29 files of 12,962 bytes. Parsing them back
+  yields `(row=10,col=14,facing=6)` in each. Area ids and start area remain
+  invented placeholders; this does not establish authentic mappings or
+  playability. Output: `data/work/por-pipeline-retail-20261118/pipeline/`.
 - **Bounded Hatari parse run (run-e, 2026-11-17).** A separate `FRUA_AREATEST`
   harness run used the generated `TGALLMAP.DSN/GEO001.DAT` (12,962 bytes,
   SHA-256 `C96DFDFB743AD1967E37A36BF538EA9DF307B5D18F143F66BD7E1AB5C14B1624`).
