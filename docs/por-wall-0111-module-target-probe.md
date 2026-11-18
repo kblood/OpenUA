@@ -58,7 +58,7 @@ So the wrapper's return value, when there is one, is the helper's `DX:AX`. The c
 
 **Helper `0x308` (called by `0x023F`), 53 instructions to `ret`.** Reads as a first-fit search over a DS-resident list.
 
-- `or ax,ax; jz` — a zero size is refused.
+- `or ax,ax; jz` to a bare `ret` with carry clear (the `stc` is skipped). A zero size is a no-op success under the carry convention, **not a refusal** (corrected; see the [bound-update note](por-wall-0111-bound-update-probe.md)).
 - `mov [DS:0x8754],ax` — the size is stored in a DS word.
 - `call 0x491` — a helper that returns `DX:AX` from the size (add 7, shifts, `and 8`); not interpreted.
 - `mov di,0x440C` — a DS list head at `0x440C`; ES:DI is loaded from it with `es les`.
@@ -67,14 +67,14 @@ So the wrapper's return value, when there is one, is the helper's `DX:AX`. The c
 
 **Helper `0x3D3` (called by `0x0254`), 40 instructions to `ret`.** Reads as a validate-and-release.
 
-- `or ax,ax; jz` — a zero size is refused.
+- `or ax,ax; jz` to a bare `ret` with carry clear, as for `0x308`: a zero size is a no-op success, **not a refusal** (corrected; see the [bound-update note](por-wall-0111-bound-update-probe.md)).
 - `test cx,0xFFF7; jnz` — the block offset must be `0` or `8`.
 - Range compares of the far pointer: `BX` against `DS:0x4402` and `DS:0x4406`, `CX` against `DS:0x4400` and `DS:0x4404` (a low pointer `DS:0x4402:0x4400` and a high pointer `DS:0x4406:0x4404`).
 - `call 0x491`, then `es mov [di+4],ax; es mov [di+6],dx` — the block's `+4..+7` dword is written with the `DX:AX` that `0x491` returned (not the raw size).
 - Relinks through `mov di,0x440C` and calls module `0x432` twice. Module `0x432` stores `DS:0x4404` and `DS:0x4406` (module `0x45F`, `0x463`), i.e. it rewrites the high pointer. Its role is read from those stores only.
 - `clc; ret`.
 
-No string move (`rep movs`/`stos`) and no interrupt appear in helpers `0x308`, `0x3D3`, `0x491` or `0x432`. **The bytes give no support for a copy reading of either target.**
+No `rep`-prefixed string move (`rep movs`/`stos`) and no interrupt appear in helpers `0x308`, `0x3D3`, `0x491` or `0x432`. **Correction:** the merge path at `0x0468..0x0487` (reached from `0x432` through the `jnz` at `0x0457` and `0x045D`, and so on the path of the `0x3D3` calls) contains non-`rep` `movsw`, `lodsw` and `stosw`. The bound-update note decodes these; see [its correction](por-wall-0111-bound-update-probe.md). Without `rep` they are word moves, not shown to be a bulk copy. **The bytes still give no rep-string or block-copy evidence for a copy reading of either target.**
 
 ## The callers: two helpers in the wall path (START)
 
@@ -122,7 +122,7 @@ So the bytes **establish a size-symmetric allocate/release pair**: the size rele
 | What is the caller ABI? | `023F`: one word (size); return `DX:AX` passed through. `0254`: word (size), far pointer (`ES:CX`, `BX`=seg); no return value | that every caller of `023F`/`0254` passes the same kinds of argument |
 | Allocation? | `023F` is a size-driven search of a DS-resident list at `0x440C`, returning the chosen node's far pointer; the wall helper stores that pointer in the element and calls `16A8` with a matching-size zero fill | that the list is initialised; the meaning of the node fields; runtime allocation |
 | Release? | `0254` range-checks the far pointer against the DS words `0x4400..0x4406`, writes the `0x491` result into the block and relinks it at `0x440C`; the wall helper releases the element's pointer and clears it | that the release runs on any real path (the walk ignores branch conditions) |
-| Copy? | no string or block move in either helper | nothing (no copy reading is supported) |
+| Copy? | no `rep`-string or block-copy evidence in either helper; non-`rep` word moves on the `0x432` merge path (`0x0468..0x0487`), see the bound-update note | a copy reading of either target (the word moves are not shown to be a bulk copy) |
 | DS values (`0x440C`, `0x4400..0x4406`, `0x4A1E`, `0x8754`) | the bytes read and write them | their values at any instant; the overlay's DGROUP base is not measured |
 
 ## Not established
@@ -139,6 +139,21 @@ So the bytes **establish a size-symmetric allocate/release pair**: the size rele
 
 `0x0AF8:0x023F` is also called at START `0x227D`, and `0x0AF8:0x0254` at START `0x2268`. Their immediate caller frames are decoded in [por-wall-0111-fill-callers-probe.md](por-wall-0111-fill-callers-probe.md): both use size `0x3F`, and their pointer roles match as a static shape. Whether they operate on the same block at runtime remains unestablished.
 
+## Companion bound-update probe (static, conditional)
+
+**Status: STATIC-PROBE-ONLY. `playable: false`. `executed: not_established`.** [por-wall-0111-bound-update-probe.md](por-wall-0111-bound-update-probe.md) decodes the routines this note left open: module `0x03D3` (the release helper called by the `0x0254` wrapper), `0x0432` (the link) and `0x0491` (the size helper). Its findings, as they bear on this note:
+
+- Module `0x0432` writes **only the high bound**: `DS:0x4404` (the offset word, at module `0x045F`) and `DS:0x4406` (the segment word, at module `0x0463`). Both stores sit behind compare-dependent branches (`0x0453`, `0x0459`), so whether either store runs depends on runtime values that were not measured. A second store is reachable only after the first call has set the high bound (the chain noted in the handoff).
+- The low bound (`DS:0x4400`/`DS:0x4402`) is not written by any reachable byte in `0x0432`.
+- The size helper `0x0491` returns `DX:AX = roundup8(size)`, which is the value `0x03D3` stores at block `+4..+7` (matching the "not the raw size" reading above).
+
+This does not establish that any of these routines runs, with which arguments, or against which list state. The bound-update probe's open edges stand: the DS values at any instant, the allocator search feeding `0x0254` (`0x0308` and its successors) not decoded, and whether the top bound is ever raised.
+
+**Corrections to this note** (applied inline above):
+
+- **Zero size is not refused.** `0x308` and `0x3D3` both reach a bare `ret` with carry clear through `jz` (the `stc` is skipped): a no-op success under the carry convention.
+- **Non-`rep` string moves exist.** `movsw`, `lodsw` and `stosw` are on the `0x432` merge path `0x0468..0x0487`. The earlier "no string move" statement was wrong for these bytes. There is no `rep` prefix, so no bulk copy is shown; the no-`rep`-evidence part of the claim is retained.
+
 ## Limits
 
 | Edge | Status |
@@ -153,7 +168,7 @@ So the bytes **establish a size-symmetric allocate/release pair**: the size rele
 
 1. **Measure the overlay's DGROUP base in a dump** (a DS-relative constant the body reads, for example `DS:0x4A1E` or `DS:0x440C`). Without it, the list head, the bounds and the flag cannot be read from memory, and nothing here about DS can be checked.
 2. **A RAM capture taken inside the wall path** (after the `023F` call at `0x6B39` returns, and before the `0254` call at `0x6C69`): the element's dword, block `+8`, `+17`, `+19`/`+21`, and the list head `DS:0x440C`. Equal sizes at alloc and release, with the element's pointer matching, would promote the pair from "shape" to "observed"; it needs new capture.
-3. **Decode module `0x432`** (the bound update). The fill helper and the two additional caller frames are now covered by the companion probe; module `0x432` remains open.
+3. **Decode module `0x432`** (the bound update). The fill helper and the two additional caller frames are covered by the fill/callers probe. Module `0x432` is now decoded byte-level by the [bound-update probe](por-wall-0111-bound-update-probe.md) (see below); its runtime values and whether it runs remain open.
 
 ## Commands and results (2026-11-18)
 
