@@ -113,6 +113,18 @@ probe matches them to group `0x74D3` (well-formed, 25 of 25 prologues). Neither 
 So under the zero-skew model the `0x21` path has **no direct edge** to the GEO body. The result is deterministic
 (`test_retail_analysis_is_deterministic`).
 
+### Later RAM cross-check of the `0x1A27` target (partial)
+
+The follow-up [stub-7 dump probe](por-ecl-21-stub7-dump-probe.md) found the live bytes for the `0x1A27`
+operand `03D5:0043` in two pinned RAM dumps. In both, the live target is `1C3B:0043` (linear `0x1C3F3`),
+and its first four bytes `CD 3F C7 10` match START stub 7 at `0x3E11`. The fifth byte differs (`00` in
+RAM, `27` in START), and the 16-byte windows differ. The probe therefore labels this `prefix4-match-trailer-differs`,
+not a full stub identity.
+
+This is memory-byte evidence at unknown capture instants. It does not show that `0x1A27` executed, that
+the ECL `0x21` arm was reached, or that the call enters the GEO fill at `0x2F9BE`. The earlier
+`geo_call_status=not-established` remains the verdict. The stack-shape match to the fill remains conditional.
+
 ### 6. Arguments
 
 The probe does not establish archive or block arguments. The decoder's operand text is incomplete for some ModRM
@@ -127,7 +139,7 @@ these only as `nearest_decoded_before`, for inspection. No conclusion is drawn f
 | --- | --- | --- |
 | Does the `0x21` arm reach a handler? | **Yes**: `0x3DA3` `E8` to `0x19BA` | decoded, direct |
 | Does the handler make near or indirect calls? | **No** | decoded walk, complete |
-| Does a far call of `0x19BA` reach the GEO body `0x2F6FF`? | **Not under the zero-skew model**; nine far calls are model-dependent | stub arithmetic; fixup-listed seg words |
+| Does a far call of `0x19BA` reach the GEO body `0x2F6FF`? | **Not under the zero-skew model**; nine far calls are model-dependent. `0x1A27` has a partial RAM prefix match to stub 7, but no full identity or execution evidence. | stub arithmetic; fixup-listed seg words; partial memory-byte cross-check |
 | Do the handler's bytes supply GEO archive/block arguments? | **Not established** | `[bp-3]` is the first AL result of a 1..3 call loop through `002B:0025`; the candidate fill's `[bp+6]` byte argument and `retf 2` are stack-compatible, but helper semantics, target identity, value and meaning remain open |
 | Is the `0x21` path reachable from a PoR root? | **Not established** | nine `E8` callers of `0x3EB7`, byte-pattern only |
 

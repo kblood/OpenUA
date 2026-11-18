@@ -112,7 +112,10 @@ Self-checks: `preconditions_hold`, `listed_seg_words_expected` (11), `fixup_reco
 4. **Other stubs.** The probe asks only about `15884`. Whether a listed site reaches another stub under some `DI` is
    not analysed. The group `0x3C3` has its own two stubs at `0x3D9` and `0x3DE`, which no listed site targets.
 5. **Runtime reachability.** Not established. The `0x3EB7` loop's callers are byte-pattern only, as the 0x21 probe
-   records. This probe gives no runtime fact.
+   records. A later [stub-7 dump cross-check](por-ecl-21-stub7-dump-probe.md) observes that the live target bytes
+   for `0x1A27` begin with the first four bytes of START stub 7 in two dumps, but the fifth byte and the 16-byte
+   window differ. This is not full target identity and does not show execution. The paragraph-residue conclusion
+   above remains a file-model result; the memory prefix does not establish a sub-paragraph placement rule.
 
 The 0x21 doc's "discriminating next step" named two branches: a record giving a base (not found), or no base (closed as
 model-dependent). The result here is the first branch's negative: no record ties a site to the stub under the paragraph
