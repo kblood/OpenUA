@@ -370,6 +370,14 @@ OPENUA_POR_INSTALL="PATH/TO/POOLRAD" tools/.venv/Scripts/python.exe -m pytest te
 
 ## Next conversion blocker
 
+The candidate control-flow diagnostic (`tools/por_ecl_cfg_probe.py`, see
+[`por-ecl-cfg-probe.md`](por-ecl-cfg-probe.md)) follows literal edges beyond
+linear stops. On ECL2 block 20 it finds 223 candidate instruction starts from
+the five header pointers, compared with the linear walk's 762; 41 conditional
+points remain open. This is only a diagnostic under conditional `0x98FE`
+addressing and `spec-menus` framing. It does not establish runtime reachability,
+opcode semantics, or explain the high-byte stops.
+
 1. **Settle the menu framing** (`0x15`, `0x2B`) against a source that is not the
    two conflicting GoldBox docs, for example a semantic check on a block with a menu
    whose items must parse exactly.

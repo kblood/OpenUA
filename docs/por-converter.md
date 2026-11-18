@@ -38,6 +38,12 @@
   reachable `LOAD_PIECES` (0x37) instructions in both framing modes. It preserves
   operands and marks the CoK interpretation as a hypothesis; most walks stop early.
   See [`por-loadpieces-census.md`](por-loadpieces-census.md).
+- **ECL candidate control-flow walk** (`tools/por_ecl_cfg_probe.py`): follows
+  literal jumps from the five header pointers past linear decode stops. On ECL2
+  block 20 it reports 223 candidate starts versus 762 linear starts, with 41
+  conditional points unresolved. Its `0x98FE` base and menu framing are
+  conditional, so it establishes no runtime reachability or event semantics.
+  See [`por-ecl-cfg-probe.md`](por-ecl-cfg-probe.md).
 - **GEO-loader far-call census** (`tools/por_geo_farcall_census.py`): decodes
   bounded paths in parsed GAME.OVR groups and checks far-call operands against
   their fixup tables. The pinned retail run found 181 arithmetic candidates but
