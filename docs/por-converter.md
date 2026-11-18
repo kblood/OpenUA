@@ -604,9 +604,14 @@ Each wall is `(slot 0..15, door 0..3)`. Slot 0 means no wall graphic.
 ### Edge mapping: Gen1 `(slot, door)` -> OpenUA wall byte
 
 OpenUA's wall byte is `passability << 4 | texture group` (`dsn.py`: 0 open,
-1 secret door, 14 solid, 15 "Blocked: force/knock/pick"). The Gen1 rule
-(`find_geo_path.py`) is: an edge is passable without interaction when its slot
-is 0 or its door flag is 1. Flags 2 and 3 need bash, pick or knock.
+1 secret door, 14 solid, 15 "Blocked: force/knock/pick"). The rule used by
+this slice is inherited from the GoldBox `find_geo_path.py` research, whose
+basis is Curse of the Azure Bonds. It is a provisional cross-title convention,
+not a PoR finding: PoR's plane-3 census and decoded reader branches do not
+establish which values pass movement. See
+[`por-geo-door-semantics.md`](por-geo-door-semantics.md). The converter still
+emits the assumed mapping below for diagnostic compatibility, and its output
+marks the mapping `provisional-unverified-for-por`.
 
 | Gen1 edge | OpenUA byte | Meaning in OpenUA |
 | --- | --- | --- |
