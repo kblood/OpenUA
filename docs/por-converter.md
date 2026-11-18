@@ -206,7 +206,11 @@ cross-checks only; none of them is used as a PoR fact.
   fall-through into stub data, so no decoder extension is justified. Candidate
   root `0x0A087` adds no transfer rows. Unknown group proc entries, unwalked bytes and data-driven
   dispatch remain outside the census; the trigger and general door semantics
-  remain unresolved.
+  remain unresolved. A companion procedure-entry survey finds five accepted
+  stub-1 proc words that do not map to prologues under `fileofs + proc`, with no
+  common alternative origin. One call candidate matches one slot only under
+  unvalidated M0, outside the door group; see
+  [`por-proc-entry-anomalies.md`](por-proc-entry-anomalies.md).
 
 The module is still map-only and unplayable. Area and start mapping are unknown, and
 events, text, art and campaign behaviour are absent.

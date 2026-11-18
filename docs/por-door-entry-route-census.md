@@ -157,6 +157,12 @@ reachable or run, and it is not baseline.** It adds no count to the baseline.
 The static transfer kinds are exhausted for the walked entries. The decode-stop gap is a proc-model gap, not a
 decoder gap. The next static step is:
 
+The companion [procedure-entry anomaly survey](por-proc-entry-anomalies.md) checked all 404 stub slots. It
+found five accepted stub-1 words for which `fileofs + proc` does not land on a prologue, and none of eight
+tested origins explains all five. One decoded `CALL FAR 002B:005C` candidate maps to group `0x9807` slot 1
+only under unvalidated M0; it does not target the door writer's group or stub. This evidence does not change
+the door-trigger result.
+
 1. **Entry model for group procs.** Find why group proc offsets are off: one is 6 bytes early, and two do not
    name a prologue. Then walk the corrected entries. This is a probe change, not a decoder change, and it is not
    part of this slice.
