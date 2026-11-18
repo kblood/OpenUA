@@ -90,3 +90,10 @@ The retail pipeline check accepted the SAVGAMA plan and emitted one loader-equiv
 design, with `playable: false`, `runtime_loaded: false` and `engine_executed: false`.
 See the test and generated report for the exact checks; this document makes no claim of
 runtime loading or gameplay validation.
+
+## Runtime evidence
+
+The bounded OpenUA runtime check of this one-area design is recorded in
+[`por-save-geo-join-runtime-2026-11-18.md`](por-save-geo-join-runtime-2026-11-18.md). It
+reached the area-2 load, but the walk did not render, so the candidate position, the first
+forward edge and the join remain unverified.
