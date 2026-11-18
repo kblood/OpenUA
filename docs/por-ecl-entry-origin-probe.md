@@ -1,6 +1,8 @@
 # Pool of Radiance ECL entry origin: what the pinned bytes establish
 
-**Status: static probe. `playable: false`. No base or origin promoted.** Tool:
+**Status: static probe. `playable: false`. No base or origin promoted.** The decoder
+has a separate opt-in `--por-vbase` mode for `0x98FE`, labelled CONDITIONAL and
+`promoted: false`; this probe's conclusion remains unchanged. Tool:
 `tools/por_ecl_entry_origin_probe.py`. Tests: `tests/test_por_ecl_entry_origin_probe.py`. Source: the pinned
 retail `GAME.OVR` (206,105 bytes, SHA-256 `872964a3...28614`), `START.EXE` (65,231 bytes, `d825df2b...6b07bd`) and
 `ECL1..8.DAX`, read-only. Output under `data/work/por-ecl-entry-origin-probe/retail/` (not committed).

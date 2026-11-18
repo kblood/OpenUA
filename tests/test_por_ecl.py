@@ -13,6 +13,7 @@ only when OPENUA_POR_ECL_DAX names a local ECL2.DAX, and it is skipped
 otherwise.
 """
 import hashlib
+import json
 import os
 import sys
 from pathlib import Path
@@ -405,3 +406,260 @@ def test_retail_ecl2_block20_anchors():
     assert starts[0xabf7 - 0x98FE].mnemonic == "COMBAT"
     assert res["coverage"]["fraction"] > 0.99
     assert res["stop"].kind == "truncated-operand"
+
+
+# ---- opt-in PoR-derived base (--por-vbase): CONDITIONAL, not promoted -------
+#
+# The base 0x98FE is evidence-backed only conditionally (docs/por-ecl-decoder.md).
+# These tests pin: the option conflict, default-off behaviour, output metadata,
+# the wrap-aware edge rule, mutation falsifiers, and (retail-gated) the pinned
+# GAME.OVR bytes and all 29 ECL1-8 blocks. None of them claims reachability,
+# event semantics, or that every target lands on an instruction start.
+
+POR_BASE = 0x98FE
+POR_TABLE_END = 0x9914
+GAME_OVR_SHA256 = "872964a32cef0fc32bbf83bab68b15e04ad36d59076f37b00a179dfee7928614"
+ECL_BLOCK_COUNT = 29
+POR_INSTALL = os.environ.get("OPENUA_POR_INSTALL")
+RETAIL_POR = pytest.mark.skipif(
+    not POR_INSTALL or not Path(POR_INSTALL, "GAME.OVR").is_file(),
+    reason="set OPENUA_POR_INSTALL to the pinned POOLRAD folder to run")
+
+
+def ecl_block_por(body: bytes) -> bytes:
+    """Synthetic block whose five header pointers sit at the table end 0x9914+k."""
+    return ecl_block(body, vbase=POR_BASE)
+
+
+def por_decode(block_bytes: bytes):
+    """Real decode path (DAX container, RLE, header, walk) with --por-vbase on."""
+    dax = make_dax([(20, block_bytes)])
+    return pe.decode_block(dax, 20, None, "conservative", None, por_vbase=True)
+
+
+def test_por_vbase_cannot_combine_with_vbase(tmp_path):
+    src = write_dax_file(tmp_path, [(20, ecl_block_por(ins(0x00)))])
+    out = tmp_path / "conflict-out"
+    pe.check_vbase_options(None, True)        # alone: fine
+    pe.check_vbase_options(0x98FE, False)     # plain --vbase: fine
+    with pytest.raises(pe.EclError, match="cannot be combined"):
+        pe.check_vbase_options(0x98FE, True)
+    with pytest.raises(pe.EclError, match="cannot be combined"):
+        pe.decode_block(src.read_bytes(), 20, None, "conservative", 0x98FE, por_vbase=True)
+    assert pe.main(["--dax", str(src), "--block", "20", "--por-vbase",
+                    "--vbase", "0x98FE", "-o", str(out)]) == 2
+    assert not out.exists()                   # refused before anything is written
+
+
+def test_default_mode_is_off_and_output_has_no_por_keys(tmp_path):
+    body = ins(0x01, opp1(POR_TABLE_END)) + ins(0x00)
+    src = write_dax_file(tmp_path, [(20, ecl_block_por(body))])
+    res = pe.decode_block(src.read_bytes(), 20, None, "conservative", None)
+    assert res["vbase"] is None and res["por_vbase"] is False
+    assert res["edges"][0]["resolution"] == "unresolved-no-base"
+    out = tmp_path / "default-out"
+    assert pe.main(["--dax", str(src), "--block", "20", "-o", str(out)]) == 0
+    doc = json.loads((out / "por_ecl.json").read_text(encoding="utf-8"))
+    assert "vbase_evidence" not in doc
+    assert doc["vbase"] is None
+    assert "PoR-derived" not in (out / "por_ecl_report.md").read_text(encoding="utf-8")
+
+
+def test_resolve_edges_default_does_not_wrap():
+    # The default rule is plain vaddr - vbase. The opt-in wrap must not leak into it.
+    edge = pe.Edge(source=0, kind="goto", target_vaddr=0x9000, indirect=False, operand_offset=1)
+    plain = pe.resolve_edges([edge], POR_BASE, 27, {0}, 27)
+    assert plain[0]["target_offset"] == 0x9000 - POR_BASE          # -2302, not wrapped
+    assert plain[0]["resolution"] == "out-of-block"
+    wrapped = pe.resolve_edges([edge], POR_BASE, 27, {0}, 27, wrap16=True)
+    assert wrapped[0]["target_offset"] == 0xF702                    # (0x9000 - 0x98FE) mod 65536
+    assert wrapped[0]["resolution"] == "out-of-block"
+
+
+def test_por_vbase_edge_resolution_uses_0x98fe():
+    # GOTO at block offset 22 (vaddr 0x9914), then EXIT at offset 26. Block length 27.
+    def goto(t):
+        return ins(0x01, opp1(t))
+    edges = por_decode(ecl_block_por(goto(0x9914) + ins(0x00)))["edges"]
+    assert edges[0]["target_offset"] == 22
+    assert edges[0]["resolution"] == "instruction-start"      # the first instruction
+    cases = {
+        0x9918: (26, "instruction-start"),   # EXIT
+        0x9916: (24, "mid-instruction"),     # inside the GOTO
+        0x9900: (2, "in-header"),            # magic/header bytes
+        0x98FE: (0, "in-header"),            # block byte 0
+        0x9920: (34, "out-of-block"),        # past the block end
+        0x9000: (0xF702, "out-of-block"),    # wraps mod 65536, far out of block
+    }
+    for target, (offset, label) in cases.items():
+        rec = por_decode(ecl_block_por(goto(target) + ins(0x00)))["edges"][0]
+        assert rec["target_offset"] == offset, hex(target)
+        assert rec["resolution"] == label, hex(target)
+
+
+def test_por_vbase_falsifier_changes_the_answer():
+    # Mutation: the same GOTO resolved under the neighbouring candidate 0x9900 lands
+    # two bytes early, inside the header. Under 0x98FE it is the first instruction.
+    blk = ecl_block_por(ins(0x01, opp1(POR_TABLE_END)) + ins(0x00))
+    dax = make_dax([(20, blk)])
+    shifted = pe.decode_block(dax, 20, None, "conservative", 0x9900)["edges"][0]
+    assert shifted["target_offset"] == 20
+    assert shifted["resolution"] == "mid-instruction"          # plain labelling, not in-header
+    por = pe.decode_block(dax, 20, None, "conservative", None, por_vbase=True)["edges"][0]
+    assert por["resolution"] == "instruction-start"
+    assert por["resolution"] != shifted["resolution"]
+
+
+def test_por_vbase_metadata_and_report_are_deterministic(tmp_path):
+    body = ins(0x01, opp1(POR_TABLE_END)) + ins(0x00)
+    src = write_dax_file(tmp_path, [(20, ecl_block_por(body))])
+    out_a, out_b = tmp_path / "por-a", tmp_path / "por-b"
+    args = ["--dax", str(src), "--block", "20", "--por-vbase"]
+    assert pe.main(args + ["-o", str(out_a)]) == 0
+    assert pe.main(args + ["-o", str(out_b)]) == 0
+    assert (out_a / "por_ecl.json").read_bytes() == (out_b / "por_ecl.json").read_bytes()
+    assert (out_a / "por_ecl_report.md").read_bytes() == (out_b / "por_ecl_report.md").read_bytes()
+    doc = json.loads((out_a / "por_ecl.json").read_text(encoding="utf-8"))
+    assert doc["status"] == "decode-only" and doc["playable"] is False
+    assert doc["vbase"] == "0x98FE"
+    ev = doc["vbase_evidence"]
+    assert ev["mode"] == "por-vbase"
+    assert ev["vbase"] == "0x98FE" and ev["wrap16"] is True
+    assert ev["rule"] == "block_offset = (vaddr - 0x98FE) mod 65536"
+    assert ev["evidence_level"] == "conditional"
+    assert ev["promoted"] is False
+    assert ev["status"] == "conditional-checks-pass"
+    chk = ev["header_table_check"]
+    assert chk["segments_0101"] is True
+    assert chk["pointers_at_or_after_table_end"] is True
+    assert chk["pointers_inside_block"] is True
+    assert chk["pointer_min_vaddr"] == "0x9914"
+    assert any("not located" in x for x in ev["not_established"])
+    assert any("other PoR revisions are not checked" in x for x in ev["not_established"])
+    assert doc["edges"][0]["resolution"] == "instruction-start"
+    report = (out_a / "por_ecl_report.md").read_text(encoding="utf-8")
+    assert "CONDITIONAL, not promoted" in report
+    assert "0x98FE" in report
+
+
+def test_por_vbase_records_failed_header_check_without_refusing(tmp_path):
+    # Pointers at 0x8016.. sit far below the table end 0x9914: the conditional base
+    # does not fit this block. It is recorded as a failed check, not refused.
+    src = write_dax_file(tmp_path, [(20, ecl_block(ins(0x00), vbase=0x8000))])
+    out = tmp_path / "fail-out"
+    assert pe.main(["--dax", str(src), "--block", "20", "--por-vbase", "-o", str(out)]) == 0
+    ev = json.loads((out / "por_ecl.json").read_text(encoding="utf-8"))["vbase_evidence"]
+    assert ev["status"] == "conditional-checks-fail"
+    assert ev["header_table_check"]["pointers_at_or_after_table_end"] is False
+    assert ev["promoted"] is False
+
+
+def test_por_vbase_cli_refuses_conflict_and_writes_nothing(tmp_path, capsys):
+    src = write_dax_file(tmp_path, [(20, ecl_block_por(ins(0x00)))])
+    out = tmp_path / "cli-conflict"
+    assert pe.main(["--dax", str(src), "--block", "20", "--por-vbase",
+                    "--vbase", "0x9900", "-o", str(out)]) == 2
+    assert "cannot be combined" in capsys.readouterr().err
+    assert not out.exists()
+
+
+# ---- retail-gated (OPENUA_POR_INSTALL = pinned POOLRAD folder) ---------------
+
+def _retail_game_ovr() -> bytes:
+    data = Path(POR_INSTALL, "GAME.OVR").read_bytes()
+    assert hashlib.sha256(data).hexdigest() == GAME_OVR_SHA256, "GAME.OVR is not the pinned build"
+    return data
+
+
+def _retail_ecl_files():
+    files = []
+    for n in range(1, 9):
+        p = Path(POR_INSTALL, "ECL%d.DAX" % n)
+        if p.is_file():
+            files.append((n, p))
+    return files
+
+
+@RETAIL_POR
+def test_retail_pinned_game_ovr_fetch_and_loader_bytes():
+    ovr = _retail_game_ovr()
+    assert ovr[0x3EDC:0x3EE0].hex() == "c43ede49"       # les di,[0x49de]
+    assert ovr[0x3EE0:0x3EE2].hex() == "03f8"           # add di,ax
+    assert ovr[0x3EE2:0x3EE7].hex() == "268a850067"     # mov al,es:[di+0x6700]
+    assert ovr[0x76C8:0x76CE].hex() == "c706ed490099"   # mov [0x49ed],0x9900
+    assert ovr[0x78B1:0x78B4].hex() == "c47ef4"         # les di,[bp-12]
+    assert ovr[0x78B4:0x78B8].hex() == "81c70200"       # add di,0x0002 (the +2 loader skip)
+
+
+@RETAIL_POR
+def test_retail_29_blocks_header_table_matches_the_equation():
+    seen = 0
+    for n, path in _retail_ecl_files():
+        data = path.read_bytes()
+        entries, base = pe.parse_dax(data)
+        for e in entries:
+            seen += 1
+            comp = data[base + e.data_offset:base + e.data_offset + e.comp_size]
+            blk = pe.rle_decode(comp, e.raw_size)
+            hdr = pe.parse_header(blk)
+            assert hdr["magic"] == 0x1388
+            assert hdr["segment_all_expected"] is True
+            for p in hdr["pointers"]:
+                off = (p["vaddr"] - POR_BASE) & 0xFFFF
+                assert p["vaddr"] >= POR_TABLE_END, (n, e.index)
+                assert pe.ECL_HEADER_LEN <= off < len(blk), (n, e.index)
+    assert seen == ECL_BLOCK_COUNT
+
+
+@RETAIL_POR
+def test_retail_29_blocks_por_vbase_edges_follow_the_equation_and_falsifiers():
+    allowed = {"instruction-start", "mid-instruction", "beyond-decoded-region",
+               "out-of-block", "in-header", "indirect-operand"}
+    total = hits = hits_9900 = hits_7ffe = 0
+    blocks = 0
+    for n, path in _retail_ecl_files():
+        data = path.read_bytes()
+        entries, _ = pe.parse_dax(data)
+        for e in entries:
+            res = pe.decode_block(data, None, e.index, "spec-menus", None, por_vbase=True)
+            blocks += 1
+            starts = {i.offset for i in res["instructions"]}
+            vaddrs = [p["vaddr"] for p in res["header"]["pointers"]]
+            vaddrs += [r["target_vaddr"] for r in res["edges"] if r["target_vaddr"] is not None]
+            for r in res["edges"]:
+                assert r["resolution"] in allowed, (n, e.index, r)
+                if r["target_vaddr"] is not None:
+                    assert r["target_offset"] == (r["target_vaddr"] - POR_BASE) & 0xFFFF
+            for v in vaddrs:
+                total += 1
+                if ((v - POR_BASE) & 0xFFFF) in starts:
+                    hits += 1
+                if ((v - 0x9900) & 0xFFFF) in starts:
+                    hits_9900 += 1
+                if ((v - 0x7FFE) & 0xFFFF) in starts:
+                    hits_7ffe += 1
+    assert blocks == ECL_BLOCK_COUNT
+    # Measured 2026-11-18 on the pinned install (spec-menus walk). A change here means
+    # the install, the walk or the target set changed. Diagnostic, not proof.
+    assert (hits, total) == (2899, 3260)
+    assert hits_9900 == 68
+    assert hits_7ffe == 17
+
+
+@RETAIL_POR
+def test_retail_cli_por_vbase_writes_29_evidence_outputs(tmp_path):
+    count = 0
+    for n, path in _retail_ecl_files():
+        entries, _ = pe.parse_dax(path.read_bytes())
+        for e in entries:
+            out = tmp_path / ("ecl%d-%d" % (n, e.index))
+            rc = pe.main(["--install", POR_INSTALL, "--ecl", str(n), "--index", str(e.index),
+                          "--framing", "spec-menus", "--por-vbase", "-o", str(out)])
+            assert rc == 0, (n, e.index)
+            doc = json.loads((out / "por_ecl.json").read_text(encoding="utf-8"))
+            assert doc["vbase"] == "0x98FE" and doc["playable"] is False
+            ev = doc["vbase_evidence"]
+            assert ev["evidence_level"] == "conditional" and ev["promoted"] is False
+            assert ev["status"] == "conditional-checks-pass", (n, e.index)
+            count += 1
+    assert count == ECL_BLOCK_COUNT

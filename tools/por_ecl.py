@@ -32,7 +32,9 @@ What it does
     unsupported. It never guesses a length.
   * Lists control-flow edges (GOTO, GOSUB, ON_GOTO, ON_GOSUB) with their raw
     vaddr targets. Targets are resolved to instruction offsets only when the
-    user supplies ``--vbase``; otherwise they stay ``unresolved-no-base``.
+    user supplies ``--vbase``, or the opt-in ``--por-vbase`` (PoR-derived,
+    CONDITIONAL, not promoted; see docs/por-ecl-decoder.md). Otherwise they stay
+    ``unresolved-no-base``. The two options cannot be combined.
   * Prints a candidate-base diagnostic (which vbase values would make the
     header pointers and edge targets land on decoded instruction starts). It is
     diagnostic only and never changes the decode.
@@ -79,6 +81,13 @@ ECL_HEADER_LEN = 22
 ECL_MAGIC = 0x1388
 ECL_SEGMENT_EXPECTED = 0x0101
 CONTROL_BYTE_LITERAL_MAX = 0x7F  # control < 0x80 -> literal run
+
+# Opt-in PoR-derived base (--por-vbase). EVIDENCE LEVEL: CONDITIONAL, NOT PROMOTED.
+# block_offset = (vaddr - 0x98FE) mod 65536. Basis and open links:
+# docs/por-ecl-decoder.md, docs/por-ecl-base-probe.md, docs/por-ecl-entry-origin-probe.md.
+POR_VBASE = 0x98FE
+POR_TABLE_END = POR_VBASE + ECL_HEADER_LEN  # vaddr 0x9914 = block byte 22
+POR_VBASE_RULE = "block_offset = (vaddr - 0x98FE) mod 65536"
 
 # Operand codes whose third byte (val) is present: word = (val << 8) | high.
 THREE_BYTE_CODES = (0x01, 0x02, 0x03, 0x81)
@@ -385,7 +394,10 @@ def walk_block(block: bytes, framing: str) -> tuple[list[Instruction], list[Edge
 
 
 def resolve_edges(edges: list[Edge], vbase: Optional[int], block_len: int,
-                  starts: set[int], decoded_end: int) -> list[dict]:
+                  starts: set[int], decoded_end: int, wrap16: bool = False) -> list[dict]:
+    """wrap16=False is the default (plain vaddr - vbase). wrap16=True is the PoR
+    address form (--por-vbase): the offset is taken mod 65536 and a target that
+    falls inside the 22-byte header is labelled ``in-header``."""
     out = []
     for e in edges:
         rec = {"source": e.source, "kind": e.kind, "operand_offset": e.operand_offset,
@@ -396,9 +408,13 @@ def resolve_edges(edges: list[Edge], vbase: Optional[int], block_len: int,
             rec["resolution"] = "unresolved-no-base"
         else:
             idx = e.target_vaddr - vbase
+            if wrap16:
+                idx &= 0xFFFF
             rec["target_offset"] = idx
             if idx < 0 or idx >= block_len:
                 rec["resolution"] = "out-of-block"
+            elif wrap16 and idx < ECL_HEADER_LEN:
+                rec["resolution"] = "in-header"
             elif idx in starts:
                 rec["resolution"] = "instruction-start"
             elif idx < decoded_end:
@@ -475,8 +491,65 @@ def parse_vbase(text: Optional[str]) -> Optional[int]:
     return v
 
 
+def check_vbase_options(vbase: Optional[int], por_vbase: bool) -> None:
+    """--vbase and --por-vbase are alternatives. Naming both is refused, never merged."""
+    if por_vbase and vbase is not None:
+        raise EclError("--por-vbase and --vbase cannot be combined; choose one "
+                       "(--por-vbase is the conditional PoR-derived base 0x98FE)")
+
+
+def por_vbase_evidence(block: bytes, header: dict) -> dict:
+    """Evidence metadata for the opt-in base. Written only in --por-vbase mode.
+
+    The checks below are structural, per block. They do not promote the base:
+    ``promoted`` is always false. A failed check is recorded, not refused.
+    """
+    vaddrs = [p["vaddr"] for p in header["pointers"]]
+    checks = {
+        "segments_0101": bool(header["segment_all_expected"]),
+        "pointer_min_vaddr": "0x%04X" % min(vaddrs),
+        "pointers_at_or_after_table_end": min(vaddrs) >= POR_TABLE_END,
+        "pointers_inside_block": all(0 <= v - POR_VBASE < len(block) for v in vaddrs),
+        "table_end_block_offset": ECL_HEADER_LEN,
+    }
+    ok = (checks["segments_0101"] and checks["pointers_at_or_after_table_end"]
+          and checks["pointers_inside_block"])
+    return {
+        "mode": "por-vbase",
+        "vbase": "0x%04X" % POR_VBASE,
+        "rule": POR_VBASE_RULE,
+        "wrap16": True,
+        "evidence_level": "conditional",
+        "promoted": False,
+        "status": "conditional-checks-pass" if ok else "conditional-checks-fail",
+        "header_table_check": checks,
+        "basis": [
+            "fetch arithmetic in GAME.OVR: buffer index = (vaddr + 0x6700) mod 65536 from [0x49DE] (bytes 0x3EDC..0x3EE2)",
+            "loader copies len-2 bytes from record+2 (add di,2 at 0x78B4; callee bodies not located)",
+            "retail: five header records parse to block bytes 2..21 and end at vaddr 0x9914 (29 of 29 ECL1-8 blocks, pinned GAME.OVR)",
+            "retail diagnostic over ECL1-8, 29 blocks (not proof): 2899 of 3260 header and literal targets land on decoded starts under 0x98FE, against 68 under 0x9900 and 17 under 0x7FFE",
+        ],
+        "not_established": [
+            "that the supplied game files match the pinned GOG revision used for this evidence; other PoR revisions are not checked by this mode",
+            "that the loader source R starts at block byte 0 (the record source callee 0x0802:0x0716 is not located)",
+            "that the copy is a byte copy of the block (callee 0x0AF8:0x1685 is not located)",
+            "that block byte 22 is an instruction start (PoR never reads the cursor after the table parse)",
+            "that every target lands on an instruction start (not so across ECL1-8; see the doc)",
+            "runtime reachability, event semantics, playable conversion",
+        ],
+        "docs": [
+            "docs/por-ecl-decoder.md",
+            "docs/por-ecl-base-probe.md",
+            "docs/por-ecl-entry-origin-probe.md",
+        ],
+    }
+
+
 def decode_block(dax_bytes: bytes, block_id: Optional[int], index: Optional[int],
-                 framing: str, vbase: Optional[int]) -> dict:
+                 framing: str, vbase: Optional[int], por_vbase: bool = False) -> dict:
+    check_vbase_options(vbase, por_vbase)
+    if por_vbase:
+        vbase = POR_VBASE
     entries, data_base = parse_dax(dax_bytes)
     entry = select_entry(entries, block_id, index)
     comp = dax_bytes[data_base + entry.data_offset:data_base + entry.data_offset + entry.comp_size]
@@ -486,7 +559,7 @@ def decode_block(dax_bytes: bytes, block_id: Optional[int], index: Optional[int]
     starts = {i.offset for i in insts}
     decoded_end = ECL_HEADER_LEN + sum(i.length for i in insts)
     tail = block[decoded_end:]
-    resolved = resolve_edges(edges, vbase, len(block), starts, decoded_end)
+    resolved = resolve_edges(edges, vbase, len(block), starts, decoded_end, wrap16=por_vbase)
     return {
         "entry": entry,
         "block": block,
@@ -498,6 +571,7 @@ def decode_block(dax_bytes: bytes, block_id: Optional[int], index: Optional[int]
         "edges": resolved,
         "framing": framing,
         "vbase": vbase,
+        "por_vbase": por_vbase,
         "coverage": decoded_coverage(insts, len(block)),
         "diagnostic": candidate_base_diagnostic(block, header, edges, starts),
     }
@@ -521,7 +595,17 @@ def build_result(source_name: str, source_sha: str, res: dict) -> dict:
     edge_counts: dict[str, int] = {}
     for ed in res["edges"]:
         edge_counts[ed["resolution"]] = edge_counts.get(ed["resolution"], 0) + 1
-    return {
+    not_claimed = [
+        "no FRUA event mapping",
+        "no module generation",
+        "no reachability or route claim",
+        "control-flow targets are raw vaddrs; resolved only with --vbase",
+        "instruction semantics are not implemented; only framing is tested",
+    ]
+    if res["por_vbase"]:
+        not_claimed[3] = ("control-flow targets are raw vaddrs; resolved with --por-vbase only "
+                          "under the conditional PoR-derived base 0x98FE (not promoted)")
+    out = {
         "schema": SCHEMA,
         "version": SCHEMA_VERSION,
         "status": STATUS,
@@ -554,14 +638,12 @@ def build_result(source_name: str, source_sha: str, res: dict) -> dict:
             "note": "raw numeric bytes; not decoded (no length or semantics guessed)",
         },
         "diagnostic_candidate_bases": res["diagnostic"],
-        "not_claimed": [
-            "no FRUA event mapping",
-            "no module generation",
-            "no reachability or route claim",
-            "control-flow targets are raw vaddrs; resolved only with --vbase",
-            "instruction semantics are not implemented; only framing is tested",
-        ],
+        "not_claimed": not_claimed,
     }
+    if res["por_vbase"]:
+        # Present only in the opt-in mode, so default output is byte-identical.
+        out["vbase_evidence"] = por_vbase_evidence(res["block"], res["header"])
+    return out
 
 
 def render_report(result: dict) -> str:
@@ -614,14 +696,35 @@ def render_report(result: dict) -> str:
     a("")
     a("## Control-flow edges")
     a("")
+    por = result.get("vbase_evidence")
     if not result["edges"]:
         a("No jump edges were decoded.")
     else:
         for kind, count in sorted(result["edge_resolution_counts"].items()):
             a("- `%s`: %d" % (kind, count))
         a("")
-        a("Edges store raw vaddr targets. They resolve to offsets only with `--vbase`.")
+        if por:
+            a("Edges resolved with the opt-in conditional base `0x98FE` (`--por-vbase`); see below.")
+        else:
+            a("Edges store raw vaddr targets. They resolve to offsets only with `--vbase`.")
     a("")
+    if por:
+        hc = por["header_table_check"]
+        a("## PoR-derived vbase (opt-in, CONDITIONAL, not promoted)")
+        a("")
+        a("- vbase `%s`, rule `%s`, wrap16 on" % (por["vbase"], por["rule"]))
+        a("- evidence level: `%s`; promoted: %s" % (por["evidence_level"],
+                                                  "yes" if por["promoted"] else "no"))
+        a("- structural check: `%s` (segments 0x0101: %s; pointers at or after 0x%04X: %s; "
+          "pointers inside block: %s; minimum pointer %s)"
+          % (por["status"], "yes" if hc["segments_0101"] else "NO", POR_TABLE_END,
+             "yes" if hc["pointers_at_or_after_table_end"] else "NO",
+             "yes" if hc["pointers_inside_block"] else "NO", hc["pointer_min_vaddr"]))
+        a("- basis: see `vbase_evidence.basis` in the JSON and `docs/por-ecl-decoder.md`")
+        a("- not established:")
+        for item in por["not_established"]:
+            a("  - %s" % item)
+        a("")
     a("## Candidate vbase diagnostic (not proof)")
     a("")
     a("Targets tested: %d (header pointers and literal jump targets)." % diag["targets"])
@@ -698,6 +801,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--framing", choices=FRAMINGS, default="conservative",
                     help="menu framing: conservative stops at 0x15/0x2B; spec-menus decodes them")
     ap.add_argument("--vbase", help="resolve jump targets: target offset = vaddr - vbase (hex or decimal)")
+    ap.add_argument("--por-vbase", action="store_true",
+                    help="opt-in, CONDITIONAL: resolve jump targets with the PoR-derived base 0x98FE "
+                         "(offset = (vaddr - 0x98FE) mod 65536). Not promoted. Cannot be combined with --vbase")
     ap.add_argument("-o", "--out", help="output folder (required unless --list)")
     args = ap.parse_args(argv)
     try:
@@ -710,7 +816,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             raise EclError("-o OUT is required unless --list")
         out = validate_output_dir(src, Path(args.out))
         vbase = parse_vbase(args.vbase)
-        res = decode_block(data, args.block, args.index, args.framing, vbase)
+        check_vbase_options(vbase, args.por_vbase)
+        res = decode_block(data, args.block, args.index, args.framing, vbase,
+                           por_vbase=args.por_vbase)
         result = build_result(src.name, hashlib.sha256(data).hexdigest(), res)
         report = render_report(result)
         write_outputs(result, report, out)

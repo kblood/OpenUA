@@ -25,6 +25,10 @@ python3 tools/por_ecl.py --install "D:/PoR" --ecl 2 --index 2 \
 
 # choose by block id (refused if the id repeats; then use --index)
 python3 tools/por_ecl.py --dax PATH/TO/ECL2.DAX --block 20 -o data/work/por-ecl/ecl2-20
+
+# opt-in, CONDITIONAL PoR-derived base 0x98FE (not promoted; cannot be combined with --vbase)
+python3 tools/por_ecl.py --install "D:/PoR" --ecl 2 --index 2 \
+    -o data/work/por-ecl/ecl2-20-por --framing spec-menus --por-vbase
 ```
 
 | Option | Meaning |
@@ -35,6 +39,7 @@ python3 tools/por_ecl.py --dax PATH/TO/ECL2.DAX --block 20 -o data/work/por-ecl/
 | `--framing conservative` (default) | stop at the two menu opcodes `0x15` and `0x2B`, keeping the rest raw |
 | `--framing spec-menus` | decode the menus with the count-driven framing of the second GoldBox source (see below) |
 | `--vbase HEX` | resolve jump targets as `offset = vaddr - vbase`. Without it, targets stay `unresolved-no-base` |
+| `--por-vbase` | **opt-in, evidence level CONDITIONAL, not promoted.** Resolve targets as `offset = (vaddr - 0x98FE) mod 65536`, label targets inside the 22-byte header `in-header`, and write `vbase_evidence` (see section 6). Never the default. Refused with exit 2, with nothing written, when combined with `--vbase` |
 | `-o OUT` | output folder. Must not be inside the source; inside the repository it must be under `data/` |
 
 Outputs in `OUT`:
@@ -45,8 +50,12 @@ Outputs in `OUT`:
   stop reason, the unsupported tail as raw bytes, and the candidate-base
   diagnostic. Keys are sorted, nothing is timestamped, and there are no absolute
   paths. String operands store length and SHA-256 only, never text.
+  Only with `--por-vbase`: a `vbase_evidence` object (mode, rule, `wrap16: true`,
+  `evidence_level: "conditional"`, `promoted: false`, a per-block header check,
+  the basis and the not-established list). Default output has no such key.
 - `por_ecl_report.md`: human-readable summary of the same, with the "not claimed"
-  list.
+  list. With `--por-vbase` it also has a "PoR-derived vbase (opt-in, CONDITIONAL,
+  not promoted)" section.
 
 Exit codes: `0` success; `2` named refusal (bad container, bad RLE, ambiguous
 block id, non-ECL block, unsafe output location, bad arguments).
@@ -68,7 +77,13 @@ commit them.
 | Code `0x80` string: `high` = number of packed bytes that follow | census: this reading advances much further than the 6-bit-character reading (see census note). PoR code: the retail 0x80 arm's unpacker count is the byte after the code (`GAME.OVR:0x07526`, `0x07577`; `docs/por-ecl-length-xref.md`), static only | GoldBox `ecl-opcode-spec-for-asm.md` 2.2 (wording ambiguous) |
 | `ON_GOTO` (`0x25`) / `ON_GOSUB` (`0x26`): `count` = literal operand 1; `count` extra operands follow | observed on retail block 20: the count operand is a literal and the entries parse | GoldBox `ecl-opcode-spec-for-asm.md` 2.4 |
 | Menu framing: `0x15` and `0x2B` | **sources disagree** (table: wordSet 0; spec: count-driven). `spec-menus` mode is census-supported, not proven. Default mode stops | see Findings |
-| Jump-target vbase for PoR ECL | **not established.** Candidate `0x98FE` fits best across blocks; `0x7FFE` (CoK rule) does not fit. PoR code fixes the fetch arithmetic (`X + 0x6700 + vaddr`) but not the buffer origin that `0x98FE` (origin `-2`) needs | see Findings and [`por-ecl-base-probe.md`](por-ecl-base-probe.md) |
+| Jump-target vbase for PoR ECL, default | **not established.** The default has no base; `--vbase` is user-supplied. `0x7FFE` (CoK rule) does not fit | see Findings |
+| Jump-target vbase `0x98FE`, opt-in `--por-vbase` | **CONDITIONAL, not promoted.** Rests on the fetch bytes, the loader's `+2` skip, a 29-block header check, and a diagnostic. Open: the loader source `R` and the copy body | Findings section 6; [`por-ecl-base-probe.md`](por-ecl-base-probe.md); [`por-ecl-entry-origin-probe.md`](por-ecl-entry-origin-probe.md) |
+| Fetch arithmetic `index = (vaddr + 0x6700) mod 65536` from `[0x49DE]` | **Established by bytes** (GAME.OVR `0x3EDC..0x3EE7`, pinned SHA-256 `872964a3...28614`) | [`por-ecl-base-probe.md`](por-ecl-base-probe.md) |
+| Header table maps to block bytes `2..21` under `(vaddr - 0x98FE) mod 65536`, ending at vaddr `0x9914` (block byte 22) | **Retail-measured** on 29 of 29 ECL1-8 blocks; the loader source is not located, so it stays conditional | [`por-ecl-entry-origin-probe.md`](por-ecl-entry-origin-probe.md) (retail check) |
+| Loader source `R` starts at block byte 0, and the copy is a byte copy | **Not established.** Callee bodies `0x0802:0x0716` and `0x0AF8:0x1685` are not located | [`por-ecl-entry-origin-probe.md`](por-ecl-entry-origin-probe.md) items 1-2 |
+| Decoded instruction starts under `0x98FE` | **Retail diagnostic, not proof.** ECL1-8: 2899 of 3260 header and literal targets are starts, against 68 under `0x9900` and 17 under `0x7FFE` | Findings section 6 |
+| Runtime reachability, event semantics, playable conversion | **Not established** | none of these slices |
 | Instruction semantics | **not implemented.** Only framing is walked | this slice |
 | FRUA event equivalence | **not established.** No mapping is emitted | this slice |
 
@@ -178,6 +193,56 @@ Note on the string length: under the 6-bit-character reading of `0x80` the walks
 stop far earlier (for example ECL2 #20 at offset 527, against 1751 under the byte
 count reading in the same conservative probe), so the byte-count reading is kept.
 
+### 6. Opt-in PoR-derived base (`--por-vbase`): CONDITIONAL, not promoted
+
+Source: the pinned retail install (`GAME.OVR`, 206,105 bytes, SHA-256
+`872964a32cef0fc32bbf83bab68b15e04ad36d59076f37b00a179dfee7928614`; ECL1-8.DAX read
+`"rb"`). Nothing was written under the install. Base `0x98FE` is a conditional
+equation, not a promoted fact. Its evidence, by level:
+
+| Level | Meaning | Items |
+|---|---|---|
+| **Established by bytes** | PoR code bytes in the pinned `GAME.OVR` | Fetch `les di,[0x49de]; add di,ax; mov al,es:[di+0x6700]` at `0x3EDC..0x3EE7`, so index `= (vaddr + 0x6700) mod 65536`. Loader `add di,0x0002` (`81 c7 02 00`) at `0x78B4` in the copy of `len-2` bytes from record+2 (`0x78B1..0x78C6`). Cursor literal `0x9900` at `0x076C8`. |
+| **Retail-measured** | Counted on all 29 ECL1-8 blocks | Magic `0x1388` in 29/29. Header segments `0x0101` in 29/29. Every header pointer `>= 0x9914` (table end, block byte 22) in 29/29. Under `(vaddr - 0x98FE) mod 65536` each pointer lands at block offset `>= 22` and inside the block. |
+| **Retail diagnostic (not proof)** | Decoded-start hits, `spec-menus` walk from byte 22 | Header pointers plus literal edge targets: 2899 of 3260 land on decoded instruction starts under `0x98FE`; 68 under `0x9900`; 17 under the CoK `0x7FFE`. 361 targets do not land on a start. |
+| **Conditional (what the opt-in uses)** | Needed for `0x98FE`, not shown by the bytes above | (a) the loader's record source `R` starts at block byte 0, so buffer index `k` is block byte `k+2`; (b) the copy is a contiguous byte copy, so the linear map extends past the header; (c) block byte 22 begins the instruction stream. |
+| **Not established** | Not claimed | Loader source `R` (callee `0x0802:0x0716`); copy body (`0x0AF8:0x1685`); that block byte 22 is an instruction start (PoR never reads the cursor after the table parse, and the five entry slots are the VM's entries); that every target lands on a start; compatibility with PoR revisions other than the pinned GOG build; runtime reachability; event semantics; playable conversion. |
+
+The opt-in is not version-locked: it accepts an ECL DAX without checking a matching
+`GAME.OVR`. Its evidence comes from the pinned GOG `GAME.OVR` and the 29 blocks in
+that install. Treat it as conditional for other user-supplied PoR revisions unless
+their executable bytes are checked separately.
+
+**What the opt-in changes (only with `--por-vbase`):**
+
+- Edges resolve as `target_offset = (vaddr - 0x98FE) & 0xFFFF` (`wrap16`). A target
+  inside the 22-byte header is labelled `in-header`, not `mid-instruction`. Other labels
+  (`instruction-start`, `mid-instruction`, `beyond-decoded-region`, `out-of-block`) keep
+  their meaning.
+- `vbase_evidence` is written with `promoted: false`, `evidence_level: "conditional"`,
+  and a per-block structural check: `segments_0101`, `pointers_at_or_after_table_end`,
+  `pointers_inside_block`. A failed check is recorded as `conditional-checks-fail`,
+  not refused.
+- `--vbase` and `--por-vbase` cannot be combined: exit 2, nothing written.
+- Default output is unchanged. Verified byte-identical to the committed `HEAD` decoder
+  on 174 retail decodes (29 blocks x 2 framings x base `none` / `0x98FE` / `0x7FFE`).
+
+**Why the base is 0x98FE and not 0x9900 or 0x7FFE:** the fetch displacement `0x6700`
+(fetch bytes) plus the loader skip `+2` gives `0x6702`, which equals `-0x98FE mod 65536`.
+In the retail header grid only skip `+2` passes all 29 blocks; every other skip passes
+none (see [`por-ecl-entry-origin-probe.md`](por-ecl-entry-origin-probe.md), retail check).
+The decoded-start diagnostic points the same way. Neither tests the source `R`, so neither
+promotes the base.
+
+**Open links that would promote or refute it:**
+
+1. Locate the record source `0x0802:0x0716` and the copy `0x0AF8:0x1685`. If `R[0]` is
+   not block byte 0, the base is wrong. See
+   [`por-ecl-entry-origin-probe.md`](por-ecl-entry-origin-probe.md), not-established items 1-2.
+2. Explain the 361 non-start targets (a framing gap, data, or a wrong base).
+3. Trace the cursor and the VM entry slots to show block byte 22 is an entry. See
+   [`por-ecl-base-probe.md`](por-ecl-base-probe.md), "What would settle the origin".
+
 ---
 
 ## Tests
@@ -203,6 +268,24 @@ guards, source resolution, and CLI exit codes.
 Local result after integration: 34 tests pass, including the opt-in retail
 anchor test against the local `ECL2.DAX` with the env var set.
 
+Opt-in `--por-vbase` tests (added 2026-11-18), in the same file:
+
+```sh
+tools/.venv/Scripts/python.exe -m pytest tests/test_por_ecl.py -q           # 41 passed, 5 skipped
+OPENUA_POR_INSTALL="PATH/TO/POOLRAD" tools/.venv/Scripts/python.exe -m pytest tests/test_por_ecl.py -q  # 46 passed
+```
+
+- Without the install: option conflict (`--por-vbase` with `--vbase`, exit 2, nothing
+  written), default-off output with no `vbase_evidence` key, wrap-aware edge labels
+  (`instruction-start`, `in-header`, `mid-instruction`, `out-of-block`, wrap mod 65536),
+  a base falsifier (the same GOTO under `0x9900` changes its label), and determinism.
+- Retail-gated (`OPENUA_POR_INSTALL`): `GAME.OVR` SHA-256 pinned, with the fetch and
+  loader bytes checked; all 29 ECL1-8 blocks checked against the header equation; the
+  edge equation checked on all 29; the measured counts (2899 of 3260; 68; 17) pinned; and
+  a CLI run writing 29 evidence outputs under `tmp_path`.
+- Mutation checks on a scratch copy of the decoder (not the repo): base set to `0x9900`
+  fails 5 tests; the wrap removed fails 3.
+
 ---
 
 ## Not claimed
@@ -212,7 +295,12 @@ anchor test against the local `ECL2.DAX` with the env var set.
 - No instruction semantics: the decoder checks framing only.
 - No reachability, route, or campaign claim. Anchor checks confirm instruction
   boundaries under the diagnostic base, not reachability.
-- No claim that `0x98FE` is the PoR vbase. It is the best fit in a diagnostic.
+- No promotion of `0x98FE` to the PoR vbase. It is the best fit in a diagnostic, and the
+  opt-in `--por-vbase` mode is labelled CONDITIONAL with `promoted: false`.
+- No claim that the loader's source `R` starts at block byte 0. That is a stated condition.
+- No claim that other PoR revisions use this relation. The mode does not check the
+  supplied DAX against a matching executable revision.
+- No claim that every target lands on an instruction start. 361 of 3260 retail targets do not.
 - No claim that the menu framing is the spec one; it is a census result.
 - No claim about GEO selector equality. The ECL selector is a variable, not assumed
   to match a GEO cell descriptor.
@@ -224,11 +312,11 @@ anchor test against the local `ECL2.DAX` with the env var set.
 1. **Settle the menu framing** (`0x15`, `0x2B`) against a source that is not the
    two conflicting GoldBox docs, for example a semantic check on a block with a menu
    whose items must parse exactly.
-2. **Establish the vbase** per PoR archive with a rule the tool can state, and test
-   it on every block's entry and hook pointers. The `0x98FE` fit is strong but
-   unproven. The fetch arithmetic is now pinned in PoR code; the open link is whether the
-   decoded DAX block starts at the far pointer or two bytes before it (the loader is not
-   located). See [`por-ecl-base-probe.md`](por-ecl-base-probe.md).
+2. **Promote or refute the vbase.** `--por-vbase` (`0x98FE`) is conditional. The open
+   link is the loader's record source `R` and copy body (`0x0802:0x0716`,
+   `0x0AF8:0x1685`). If `R[0]` is not block byte 0, the base is wrong. See
+   [`por-ecl-entry-origin-probe.md`](por-ecl-entry-origin-probe.md) and
+   [`por-ecl-base-probe.md`](por-ecl-base-probe.md). Findings section 6 lists the evidence.
 3. **Explain the stops above `0x40`** (`0x4B`, `0x63`, `0xFA`, ...). Decide whether
    they are data, a missing operand form, or PoR-only opcodes, with evidence per
    case.
@@ -249,9 +337,11 @@ most retail blocks, so absence of `0x37` is not established there.
 
 ## Source files
 
-- `tools/por_ecl.py` (this slice)
-- `tests/test_por_ecl.py` (synthetic tests; retail anchor test opt-in)
+- `tools/por_ecl.py` (this slice; `--por-vbase` is opt-in and conditional)
+- `tests/test_por_ecl.py` (synthetic tests; retail anchor and `--por-vbase` retail checks opt-in)
 - `docs/por-ecl-decoder.md` (this file)
+- Evidence for the opt-in base: [`por-ecl-base-probe.md`](por-ecl-base-probe.md),
+  [`por-ecl-entry-origin-probe.md`](por-ecl-entry-origin-probe.md) (read-only; their tools are not changed here)
 - `tools/por_loadpieces_census.py` and `docs/por-loadpieces-census.md` (batch census that reuses this decoder)
 - GoldBox read-only references: `docs/dax-format.md`,
   `docs/engine/research/ecl-krynn-gen1-opcodes.md`,
