@@ -663,3 +663,232 @@ def test_retail_cli_por_vbase_writes_29_evidence_outputs(tmp_path):
             assert ev["status"] == "conditional-checks-pass", (n, e.index)
             count += 1
     assert count == ECL_BLOCK_COUNT
+
+
+# ---- opt-in PoR 0x80 candidate decode (--por-decode-strings) -----------------
+#
+# Candidate text only: every record is accepted false, runtime_verified false,
+# playable false. Codec evidence is pinned-retail static (GAME.OVR 0x08626 unpacker,
+# 0x07BA6 char map, 0x07526 count writer; docs/por-ecl-codec-static-probe.md and
+# docs/por-ecl-length-xref.md). None of these tests claims that a decoded run is
+# the text the game shows.
+
+def pack6(values):
+    """Test-only writer: MSB-first 6-bit packing, zero-padded to whole bytes."""
+    bits = "".join(format(v, "06b") for v in values)
+    bits += "0" * (-len(bits) % 8)
+    return bytes(int(bits[i:i + 8], 2) for i in range(0, len(bits), 8))
+
+
+def print_block(payload: bytes, tail: bytes = b"") -> bytes:
+    """PRINT (0x11) with one 0x80 string operand, then whatever the tail holds."""
+    return ecl_block(ins(0x11, strop(payload)) + tail)
+
+
+def first_record(block_bytes: bytes) -> dict:
+    insts, _, _ = pe.walk_block(block_bytes, "conservative", por_strings=True)
+    return insts[0].operands[0]["por_decoded"]
+
+
+def test_full_group_gives_four_values_from_three_bytes():
+    payload = bytes([0x06, 0xAF, 0xBF])
+    assert pe.por_6bit_values(payload) == [0x01, 0x2A, 0x3E, 0x3F]
+    assert pack6([0x01, 0x2A, 0x3E, 0x3F]) == payload       # the writer agrees with the bytes
+    rec = first_record(print_block(payload))
+    assert rec["status"] == "candidate"
+    assert rec["values"] == 4 and rec["zero_values_skipped"] == 0
+    assert rec["char_codes"] == ["0x41", "0x2A", "0x3E", "0x3F"]
+    assert rec["candidate_text"] == "A*>?"
+    assert (rec["accepted"], rec["runtime_verified"], rec["playable"]) == (False, False, False)
+
+
+@pytest.mark.parametrize("payload,values", [
+    (b"\x04", [1]),                                   # 1 byte  -> floor(8/6) = 1
+    (b"\x06\xAF", [1, 0x2A]),                         # 2 bytes -> floor(16/6) = 2
+    (pack6([1, 2, 3, 4, 5]), [1, 2, 3, 4, 5]),        # 4 bytes -> floor(32/6) = 5
+    (pack6([1, 2, 3, 4, 5, 6]), [1, 2, 3, 4, 5, 6]),  # 5 bytes -> floor(40/6) = 6
+])
+def test_partial_tails_follow_floor_8n_over_6(payload, values):
+    assert len(pe.por_6bit_values(payload)) == 8 * len(payload) // 6
+    assert pe.por_6bit_values(payload) == values
+    rec = first_record(print_block(payload))
+    assert rec["values"] == len(values)
+    assert rec["bytes_used"] == len(payload)
+
+
+def test_leftover_tail_bits_are_dropped_not_read_as_a_value():
+    # 0xFC alone is 11111100: one value 0x3F, the last two bits are not a value.
+    assert pe.por_6bit_values(b"\xFC") == [0x3F]
+    rec = first_record(print_block(b"\xFC"))
+    assert rec["char_codes"] == ["0x3F"] and rec["candidate_text"] == "?"
+
+
+def test_zero_value_is_skipped_not_a_terminator():
+    payload = pack6([0, 5, 0, 0x3F])
+    rec = first_record(print_block(payload))
+    assert rec["values"] == 4
+    assert rec["zero_values_skipped"] == 2
+    assert rec["char_codes"] == ["0x45", "0x3F"]     # the 5 after a zero still decodes
+    assert rec["candidate_text"] == "E?"
+    all_zero = first_record(print_block(b"\x00\x00\x00"))
+    assert all_zero["status"] == "candidate"
+    assert all_zero["char_codes"] == [] and all_zero["candidate_text"] == ""
+    assert all_zero["zero_values_skipped"] == 4
+
+
+def test_char_map_boundary_at_0x1f_and_0x20():
+    assert pe.por_char(0x1F) == 0x5F          # v <= 0x1F -> v + 0x40
+    assert pe.por_char(0x20) == 0x20          # first value that is not remapped
+    assert pe.por_char(0x1E) == 0x5E
+    rec = first_record(print_block(pack6([0x1F, 0x20, 0x1E, 0x3F])))
+    assert rec["char_codes"] == ["0x5F", "0x20", "0x5E", "0x3F"]
+    assert rec["candidate_text"] == "_ ^?"
+
+
+def test_count_limits_extraction_bytes_after_the_payload_are_ignored():
+    payload = pack6([1, 2, 3, 4])                      # 3 bytes, 4 values
+    assert len(payload) == 3
+    # Same operand; the byte right after the payload differs. The record must not change.
+    # (Changing it may stop the walk, but the PRINT is complete before that byte.)
+    a = print_block(payload, tail=ins(0x00))
+    b = print_block(payload, tail=bytes([0x3F]))
+    rec_a, rec_b = first_record(a), first_record(b)
+    assert rec_a == rec_b
+    assert rec_a["bytes_used"] == 3 and rec_a["values"] == 4
+    insts, _, _ = pe.walk_block(a, "conservative", por_strings=True)
+    assert [i.mnemonic for i in insts] == ["PRINT", "EXIT"] and insts[1].offset == 22 + 6
+    assert rec_a["candidate_text"] == "ABCD"
+
+
+def test_menu_count_operands_are_decoded_in_place():
+    # VERTICAL_MENU (spec framing): count strings sit in count_operands. Decoded, not reframed.
+    body = ins(0x15, lit(0), strop(b"p"), lit(2), strop(pack6([1])), strop(pack6([2])))
+    insts, _, stop = pe.walk_block(ecl_block(body + ins(0x00)), "spec-menus",
+                                   por_strings=True)
+    assert insts[0].mnemonic == "VERTICAL_MENU" and stop.kind == "end-of-block"
+    counts = insts[0].count_operands
+    assert [c["por_decoded"]["candidate_text"] for c in counts] == ["A", "B"]
+
+
+def test_truncated_or_malformed_payload_fails_closed():
+    # Operand says 10 bytes; only 2 are present. Helper refuses and emits no text.
+    op = pe.Operand(code=0x80, high=10, val=None, word=10, size=12, string_len=10, offset=0)
+    rec = pe.por_string_record(bytes([0x80, 0x0A, 0x01, 0x02]), op)
+    assert rec["status"] == "refused" and rec["reason"] == "payload truncated"
+    assert "char_codes" not in rec and "candidate_text" not in rec
+    assert rec["accepted"] is False
+    # A non-string operand is never decoded.
+    not_string = pe.Operand(code=0x00, high=0, val=None, word=0, size=2, offset=0)
+    assert pe.por_string_record(bytes([0x00, 0x00]), not_string)["status"] == "refused"
+    # Walk level: the truncated string stops the walk and produces no record at all.
+    insts, _, stop = pe.walk_block(ecl_block(bytes([0x11, 0x80, 0x0A, 0x01, 0x02])),
+                                   "conservative", por_strings=True)
+    assert stop.kind == "truncated-operand" and insts == []
+
+
+def test_zero_length_string_is_empty_not_refused():
+    rec = first_record(print_block(b""))
+    assert rec["status"] == "empty" and rec["count"] == 0 and rec["candidate_text"] == ""
+
+
+def test_default_walk_has_no_por_keys_and_flag_changes_only_the_additions():
+    payload = pack6([0x01, 0x02, 0x03])
+    body = ins(0x11, strop(payload)) + ins(0x09, lit(5), opp1(0x7D10)) + ins(0x00)
+    blk = ecl_block(body)
+    d_insts, d_edges, d_stop = pe.walk_block(blk, "conservative")
+    p_insts, p_edges, p_stop = pe.walk_block(blk, "conservative", por_strings=True)
+    for i in d_insts:
+        for o in i.operands + i.count_operands:
+            assert "por_decoded" not in o
+    # Flag on: identical framing, hashes, edges, stop and tail once the additions are removed.
+    stripped = [dict(i.__dict__, operands=[{k: v for k, v in o.items() if k != "por_decoded"}
+                                            for o in i.operands],
+                     count_operands=[{k: v for k, v in o.items() if k != "por_decoded"}
+                                     for o in i.count_operands]) for i in p_insts]
+    assert stripped == [i.__dict__ for i in d_insts]
+    assert p_edges == d_edges and p_stop.kind == d_stop.kind and p_stop.offset == d_stop.offset
+
+
+def test_default_outputs_have_no_por_string_keys(tmp_path):
+    src = write_dax_file(tmp_path, [(20, ecl_block(ins(0x11, strop(pack6([1, 2, 3])))
+                                                   + ins(0x00)))])
+    out = tmp_path / "strings-default"
+    assert pe.main(["--dax", str(src), "--block", "20", "-o", str(out)]) == 0
+    text = (out / "por_ecl.json").read_text(encoding="utf-8")
+    assert "por_decoded" not in text and "por_string_decode" not in text
+    assert "NOT accepted text" not in (out / "por_ecl_report.md").read_text(encoding="utf-8")
+    res = pe.decode_block(src.read_bytes(), 20, None, "conservative", None)
+    assert res["por_strings"] is False
+    assert "por_string_decode" not in pe.build_result(src.name, "x", res)
+
+
+def test_cli_flag_writes_candidates_with_provenance_and_non_claims(tmp_path):
+    payload = pack6([0x01, 0x2A, 0x3E, 0x3F])
+    src = write_dax_file(tmp_path, [(20, ecl_block(ins(0x11, strop(payload)) + ins(0x00)))])
+    out = tmp_path / "strings-on"
+    assert pe.main(["--dax", str(src), "--block", "20", "--por-decode-strings",
+                    "-o", str(out)]) == 0
+    doc = json.loads((out / "por_ecl.json").read_text(encoding="utf-8"))
+    assert doc["playable"] is False and doc["status"] == "decode-only"
+    sd = doc["por_string_decode"]
+    assert sd["accepted"] is False and sd["runtime_verified"] is False and sd["playable"] is False
+    assert sd["operands_0x80"] == 1 and sd["candidate"] == 1 and sd["refused"] == 0
+    assert sd["walk_stop"] == "end-of-block"
+    assert sd["evidence_level"] == "pinned-retail-static"
+    assert any("run time" in x for x in sd["not_established"])
+    rec = doc["instructions"][0]["operands"][0]["por_decoded"]
+    assert rec["candidate_text"] == "A*>?" and rec["accepted"] is False
+    report = (out / "por_ecl_report.md").read_text(encoding="utf-8")
+    assert "NOT accepted text" in report and "A*>?" in report
+    # The source-hash identity fields are unchanged by the flag.
+    plain = tmp_path / "strings-plain"
+    assert pe.main(["--dax", str(src), "--block", "20", "-o", str(plain)]) == 0
+    base = json.loads((plain / "por_ecl.json").read_text(encoding="utf-8"))
+    assert doc["instructions"][0]["operands"][0]["string_sha256"] == \
+        base["instructions"][0]["operands"][0]["string_sha256"]
+    assert doc["source"] == base["source"] and doc["edges"] == base["edges"]
+
+
+def test_flag_combines_with_por_vbase_and_stays_candidate_only(tmp_path):
+    src = write_dax_file(tmp_path, [(20, ecl_block_por(ins(0x11, strop(pack6([5]))) + ins(0x00)))])
+    out = tmp_path / "both"
+    assert pe.main(["--dax", str(src), "--block", "20", "--por-vbase", "--por-decode-strings",
+                    "-o", str(out)]) == 0
+    doc = json.loads((out / "por_ecl.json").read_text(encoding="utf-8"))
+    assert "vbase_evidence" in doc and "por_string_decode" in doc
+    assert doc["vbase_evidence"]["promoted"] is False
+    assert doc["por_string_decode"]["accepted"] is False
+
+
+# ---- retail-gated cross-check for the 0x80 candidate decode -----------------
+
+@RETAIL_POR
+def test_retail_0x80_candidates_match_the_reference_bit_layout():
+    # The reference (ref_values / expected_skip_zero) is the bit layout the 8086-subset
+    # emulator verified against GAME.OVR:0x08626. This checks the decoder against it on
+    # every complete 0x80 operand in ECL1-8. It does not check that any text is accepted.
+    import por_ecl_codec_static as pcs  # noqa: E402  (tools/ is on sys.path)
+    checked = 0
+    for n, path in _retail_ecl_files():
+        data = path.read_bytes()
+        entries, _ = pe.parse_dax(data)
+        for e in entries:
+            res = pe.decode_block(data, None, e.index, "spec-menus", None, por_strings=True)
+            plain = pe.decode_block(data, None, e.index, "spec-menus", None)
+            assert [(i.offset, i.length, i.mnemonic) for i in res["instructions"]] == \
+                [(i.offset, i.length, i.mnemonic) for i in plain["instructions"]], (n, e.index)
+            for ins_ in res["instructions"]:
+                for d in ins_.operands + ins_.count_operands:
+                    rec = d.get("por_decoded")
+                    if rec is None:
+                        continue
+                    assert rec["accepted"] is False and rec["runtime_verified"] is False
+                    if rec["status"] != "candidate":
+                        assert rec["status"] in ("empty", "refused")
+                        continue
+                    start = rec["payload_offset"]
+                    payload = res["block"][start:start + rec["count"]]
+                    _, codes = pcs.expected_skip_zero(payload)
+                    assert rec["char_codes"] == ["0x%02X" % c for c in codes], (n, e.index, start)
+                    checked += 1
+    assert checked > 0

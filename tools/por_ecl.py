@@ -43,6 +43,15 @@ What it does
     Output refused unless it is outside the source and, inside this repository,
     under ``data/`` (git-ignored).
 
+  * Opt-in ``--por-decode-strings`` (default off): for each complete ``0x80``
+    operand, decodes its payload bytes with the PoR 6-bit codec (GAME.OVR
+    0x8626 / 0x7BA6; docs/por-ecl-codec-static-probe.md) into CANDIDATE character
+    codes and text, tagged ``accepted: false``, ``runtime_verified: false``,
+    ``playable: false``. Only the ``count`` bytes named by the operand are read,
+    and malformed or truncated payloads yield ``status: refused`` with no text.
+    It never changes framing, opcode semantics or control flow. Without the flag
+    the JSON and report are byte-identical to the flagless tool.
+
 What it refuses (exit 2, named error)
   * A DAX whose TOC size is not a positive multiple of 9, whose TOC runs past EOF,
     whose data chain is not contiguous, or whose data does not end at EOF.
@@ -92,6 +101,43 @@ POR_VBASE_RULE = "block_offset = (vaddr - 0x98FE) mod 65536"
 # Operand codes whose third byte (val) is present: word = (val << 8) | high.
 THREE_BYTE_CODES = (0x01, 0x02, 0x03, 0x81)
 STRING_CODE = 0x80
+
+# PoR 0x80 payload codec, used only by --por-decode-strings. Retail evidence (static
+# plus an 8086-subset execution of the unpacker; not runtime): the MSB-first 6-bit
+# unpacker at GAME.OVR:0x08626, the char map at GAME.OVR:0x07BA6, and the count
+# writer at GAME.OVR:0x07526. Sources: docs/por-ecl-codec-static-probe.md and
+# docs/por-ecl-length-xref.md. Evidence level: pinned-retail static, NOT accepted text.
+POR_CHAR_MAP_LIMIT = 0x1F      # v <= 0x1F -> v + 0x40, else v (GAME.OVR:0x07BA6)
+POR_ASCII_MAX = 0x7E           # codes outside printable ASCII are escaped, never printed raw
+POR_STRING_PROVENANCE = {
+    "mode": "por-decode-strings",
+    "scope": "complete 0x80 inline-string operands only; the payload is the 'high' byte count "
+             "of bytes that follow the 0x80 code byte",
+    "codec": "MSB-first 6-bit split, 4 values per 3 bytes; a tail of n bytes gives floor(8n/6) "
+             "values (leftover bits dropped); value 0 is skipped, not a terminator; "
+             "char = v + 0x40 for v <= 0x1F, else v",
+    "evidence_level": "pinned-retail-static",
+    "sources": [
+        "GAME.OVR:0x08626 unpacker, 0x07BA6 char map (docs/por-ecl-codec-static-probe.md)",
+        "GAME.OVR:0x07526 count writer, 0x07577 read, payload at p+3 (docs/por-ecl-length-xref.md)",
+    ],
+    "framing_basis": "operand boundaries come from this decoder's framing, which is GoldBox-derived "
+                     "and not changed here; the PoR 0x80 arm agrees on the count and payload "
+                     "offset, but the walk-to-parser alignment is not shown",
+    "accepted": False,
+    "runtime_verified": False,
+    "playable": False,
+    "not_established": [
+        "that the ECL walk reaches the operand parser GAME.OVR:0x074D3 at run time",
+        "that a decoded run is the text the game shows, or any text is accepted",
+        "that the decoder's block offsets and the parser's stream offsets index the same bytes",
+        "the meaning of the surrounding opcode (names and framing are GoldBox-derived hypotheses)",
+    ],
+    "not_claimed": [
+        "no accepted or playable text, no FRUA event mapping, no module generation",
+        "no runtime reachability or on-screen match",
+    ],
+}
 
 # Opcode table: op -> (mnemonic, wordSet, countAt or None).
 # Source: GoldBox ecl-krynn-gen1-opcodes.md section 2 (EclDump-derived table).
@@ -304,6 +350,70 @@ def operand_dict(op: Operand) -> dict:
     return d
 
 
+def por_6bit_values(payload: bytes) -> list[int]:
+    """MSB-first 6-bit split (PoR GAME.OVR:0x08626). floor(8n/6) values; leftover bits dropped."""
+    total = 8 * len(payload)
+    big = int.from_bytes(payload, "big") if payload else 0
+    return [(big >> (total - 6 * (k + 1))) & 0x3F for k in range(total // 6)]
+
+
+def por_char(v: int) -> int:
+    """PoR char map (GAME.OVR:0x07BA6): v + 0x40 for v <= 0x1F, else v."""
+    return v + 0x40 if v <= POR_CHAR_MAP_LIMIT else v
+
+
+def por_string_record(block: bytes, op: Operand) -> dict:
+    """Candidate decode of one complete 0x80 operand. Fails closed: anything that is not a
+    complete 0x80 string with its full payload present yields status "refused" and no text.
+    Reads exactly ``op.string_len`` bytes, starting at the payload offset (operand + 2)."""
+    base = {"accepted": False, "runtime_verified": False, "playable": False}
+    if op.code != STRING_CODE or op.string_len is None:
+        return dict(base, status="refused", reason="operand is not a 0x80 inline string")
+    n = op.string_len
+    start = op.offset + 2
+    if start + n > len(block):
+        return dict(base, status="refused", reason="payload truncated",
+                    count=n, present=max(0, len(block) - start))
+    if n == 0:
+        return dict(base, status="empty", payload_offset=start, count=0, bytes_used=0,
+                    values=0, zero_values_skipped=0, char_codes=[], candidate_text="")
+    payload = block[start:start + n]
+    vals = por_6bit_values(payload)
+    kept = [v for v in vals if v != 0]
+    codes = [por_char(v) for v in kept]
+    text = "".join(chr(c) if 0x20 <= c <= POR_ASCII_MAX else "\\x%02X" % c for c in codes)
+    return dict(base, status="candidate", payload_offset=start, count=n, bytes_used=n,
+                values=len(vals), zero_values_skipped=len(vals) - len(kept),
+                char_codes=["0x%02X" % c for c in codes], candidate_text=text)
+
+
+def _operand_out(block: bytes, ops: list, por_strings: bool) -> list:
+    out = []
+    for o in ops:
+        d = operand_dict(o)
+        if por_strings and o.code == STRING_CODE:
+            d["por_decoded"] = por_string_record(block, o)
+        out.append(d)
+    return out
+
+
+def por_string_summary(insts: list, walk_stop: str) -> dict:
+    """Counts over the complete instructions only. Operands past a walk stop are not counted."""
+    seen = {"candidate": 0, "empty": 0, "refused": 0}
+    codes = 0
+    for i in insts:
+        for d in i.operands + i.count_operands:
+            rec = d.get("por_decoded")
+            if rec is None:
+                continue
+            seen[rec["status"]] = seen.get(rec["status"], 0) + 1
+            codes += len(rec.get("char_codes", []))
+    return dict(POR_STRING_PROVENANCE, walk_stop=walk_stop,
+                operands_0x80=sum(seen.values()), candidate=seen["candidate"],
+                empty=seen["empty"], refused=seen["refused"], char_codes_total=codes,
+                status="candidate-only")
+
+
 @dataclass
 class Instruction:
     offset: int
@@ -332,7 +442,8 @@ class Stop:
     detail: str
 
 
-def walk_block(block: bytes, framing: str) -> tuple[list[Instruction], list[Edge], Stop]:
+def walk_block(block: bytes, framing: str,
+               por_strings: bool = False) -> tuple[list[Instruction], list[Edge], Stop]:
     if framing not in FRAMINGS:
         raise EclError("unknown framing %r" % framing)
     insts: list[Instruction] = []
@@ -373,8 +484,8 @@ def walk_block(block: bytes, framing: str) -> tuple[list[Instruction], list[Edge
                     pos += o.size
         except EclError as exc:
             return insts, edges, Stop("truncated-operand", start, op, str(exc))
-        inst = Instruction(start, op, mnemonic, [operand_dict(o) for o in ops],
-                           [operand_dict(o) for o in count_ops], pos - start,
+        inst = Instruction(start, op, mnemonic, _operand_out(block, ops, por_strings),
+                           _operand_out(block, count_ops, por_strings), pos - start,
                            semantics_known=(op != 0x1F))
         insts.append(inst)
         if op in JUMP_KINDS:
@@ -546,7 +657,8 @@ def por_vbase_evidence(block: bytes, header: dict) -> dict:
 
 
 def decode_block(dax_bytes: bytes, block_id: Optional[int], index: Optional[int],
-                 framing: str, vbase: Optional[int], por_vbase: bool = False) -> dict:
+                 framing: str, vbase: Optional[int], por_vbase: bool = False,
+                 por_strings: bool = False) -> dict:
     check_vbase_options(vbase, por_vbase)
     if por_vbase:
         vbase = POR_VBASE
@@ -555,7 +667,7 @@ def decode_block(dax_bytes: bytes, block_id: Optional[int], index: Optional[int]
     comp = dax_bytes[data_base + entry.data_offset:data_base + entry.data_offset + entry.comp_size]
     block = rle_decode(comp, entry.raw_size)
     header = parse_header(block)
-    insts, edges, stop = walk_block(block, framing)
+    insts, edges, stop = walk_block(block, framing, por_strings=por_strings)
     starts = {i.offset for i in insts}
     decoded_end = ECL_HEADER_LEN + sum(i.length for i in insts)
     tail = block[decoded_end:]
@@ -572,6 +684,7 @@ def decode_block(dax_bytes: bytes, block_id: Optional[int], index: Optional[int]
         "framing": framing,
         "vbase": vbase,
         "por_vbase": por_vbase,
+        "por_strings": por_strings,
         "coverage": decoded_coverage(insts, len(block)),
         "diagnostic": candidate_base_diagnostic(block, header, edges, starts),
     }
@@ -643,6 +756,9 @@ def build_result(source_name: str, source_sha: str, res: dict) -> dict:
     if res["por_vbase"]:
         # Present only in the opt-in mode, so default output is byte-identical.
         out["vbase_evidence"] = por_vbase_evidence(res["block"], res["header"])
+    if res["por_strings"]:
+        # Present only in the opt-in mode, so default output is byte-identical.
+        out["por_string_decode"] = por_string_summary(res["instructions"], res["stop"].kind)
     return out
 
 
@@ -725,6 +841,35 @@ def render_report(result: dict) -> str:
         for item in por["not_established"]:
             a("  - %s" % item)
         a("")
+    sd = result.get("por_string_decode")
+    if sd:
+        a("## PoR 0x80 candidate decode (opt-in, NOT accepted text)")
+        a("")
+        a("- candidates are tagged `accepted: false`, `runtime_verified: false`, `playable: false`")
+        a("- codec and evidence: GAME.OVR 0x08626 / 0x07BA6 / 0x07526, pinned-retail static; "
+          "see `docs/por-ecl-decoder.md`")
+        a("- 0x80 operands: %d (candidate %d, empty %d, refused %d); walk stop: `%s`"
+          % (sd["operands_0x80"], sd["candidate"], sd["empty"], sd["refused"], sd["walk_stop"]))
+        a("- not established:")
+        for item in sd["not_established"]:
+            a("  - %s" % item)
+        a("")
+        rows = []
+        for ins_ in result["instructions"]:
+            for key in ("operands", "count_operands"):
+                for d in ins_[key]:
+                    rec = d.get("por_decoded")
+                    if rec is not None and rec["status"] != "refused":
+                        rows.append((ins_["offset"], d["offset"], rec))
+        if rows:
+            a("| Instruction offset | Operand offset | Count | Candidate text |")
+            a("|---|---|---|---|")
+            for ioff, ooff, rec in rows:
+                a("| %d | %d | %d | `%s` |" % (ioff, ooff, rec["count"], rec["candidate_text"]))
+            a("")
+        else:
+            a("No candidate payloads were decoded.")
+            a("")
     a("## Candidate vbase diagnostic (not proof)")
     a("")
     a("Targets tested: %d (header pointers and literal jump targets)." % diag["targets"])
@@ -804,6 +949,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--por-vbase", action="store_true",
                     help="opt-in, CONDITIONAL: resolve jump targets with the PoR-derived base 0x98FE "
                          "(offset = (vaddr - 0x98FE) mod 65536). Not promoted. Cannot be combined with --vbase")
+    ap.add_argument("--por-decode-strings", action="store_true",
+                    help="opt-in: decode each 0x80 operand payload with the PoR 6-bit codec into "
+                         "CANDIDATE text (accepted: false, runtime_verified: false). Default off")
     ap.add_argument("-o", "--out", help="output folder (required unless --list)")
     args = ap.parse_args(argv)
     try:
@@ -818,7 +966,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         vbase = parse_vbase(args.vbase)
         check_vbase_options(vbase, args.por_vbase)
         res = decode_block(data, args.block, args.index, args.framing, vbase,
-                           por_vbase=args.por_vbase)
+                           por_vbase=args.por_vbase, por_strings=args.por_decode_strings)
         result = build_result(src.name, hashlib.sha256(data).hexdigest(), res)
         report = render_report(result)
         write_outputs(result, report, out)

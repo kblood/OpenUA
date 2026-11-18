@@ -40,6 +40,7 @@ python3 tools/por_ecl.py --install "D:/PoR" --ecl 2 --index 2 \
 | `--framing spec-menus` | decode the menus with the count-driven framing of the second GoldBox source (see below) |
 | `--vbase HEX` | resolve jump targets as `offset = vaddr - vbase`. Without it, targets stay `unresolved-no-base` |
 | `--por-vbase` | **opt-in, evidence level CONDITIONAL, not promoted.** Resolve targets as `offset = (vaddr - 0x98FE) mod 65536`, label targets inside the 22-byte header `in-header`, and write `vbase_evidence` (see section 6). Never the default. Refused with exit 2, with nothing written, when combined with `--vbase` |
+| `--por-decode-strings` | **opt-in, default off, candidate text only.** Decode each complete `0x80` operand payload with the PoR 6-bit codec (section 7). Output is tagged `accepted: false`, `runtime_verified: false`, `playable: false`. Framing, opcodes and control flow are unchanged |
 | `-o OUT` | output folder. Must not be inside the source; inside the repository it must be under `data/` |
 
 Outputs in `OUT`:
@@ -50,6 +51,10 @@ Outputs in `OUT`:
   stop reason, the unsupported tail as raw bytes, and the candidate-base
   diagnostic. Keys are sorted, nothing is timestamped, and there are no absolute
   paths. String operands store length and SHA-256 only, never text.
+  Only with `--por-decode-strings`: each `0x80` operand gets a `por_decoded` record
+  (status `candidate`, `empty` or `refused`, the count, the candidate character codes
+  and text, all `accepted: false`), and the top level gets `por_string_decode` (the
+  provenance, the counts, and the not-established list). Default output has neither key.
   Only with `--por-vbase`: a `vbase_evidence` object (mode, rule, `wrap16: true`,
   `evidence_level: "conditional"`, `promoted: false`, a per-block header check,
   the basis and the not-established list). Default output has no such key.
@@ -245,6 +250,60 @@ promotes the base.
 
 ---
 
+## 7. PoR 0x80 candidate decode (opt-in, `--por-decode-strings`)
+
+**Status: candidate text only. `accepted: false`, `runtime_verified: false`, `playable: false`.**
+This is a decode of bytes, not a claim about what the game shows.
+
+Evidence (pinned retail `GAME.OVR`, static, with an 8086-subset execution of the unpacker;
+see `docs/por-ecl-codec-static-probe.md` and `docs/por-ecl-length-xref.md`):
+
+- `GAME.OVR:0x08626` is an MSB-first 6-bit unpacker: 3 bytes give four 6-bit values, and a
+  tail of `n` bytes gives `floor(8n/6)` values (1 byte: 1 value; 2 bytes: 2 values).
+- `GAME.OVR:0x07BA6` is the char map: `v + 0x40` for `v <= 0x1F`, else `v`.
+- Value 0 is **skipped**, not a terminator (`GAME.OVR:0x08701`).
+- The count is `S(p+2)`, written at `GAME.OVR:0x07526` and read at `0x07577`. For the `0x80`
+  operand this is the operand's `high` byte, and the payload is the `high` bytes after the
+  code byte. The unpacker reads exactly that many bytes.
+
+What the flag does: for each complete `0x80` operand, the decoder reads exactly `high`
+payload bytes (from operand + 2), decodes them with the codec above, and records the
+character codes and text. A malformed or truncated payload is `refused` and emits no text.
+An empty (`high = 0`) payload is `empty`. The walk, the framing, the operand lengths and the
+`string_sha256` hash are unchanged, and the output is identical to the default when the
+flag is absent (checked byte-for-byte on all 29 retail blocks, both framings, and with
+`--por-vbase`).
+
+What this does **not** establish:
+
+- That the ECL walk reaches the operand parser `GAME.OVR:0x074D3` at run time. Its caller is
+  a far call, and no trace shows the walk reaching it.
+- That the decoder's block offsets and the parser's stream offsets index the same bytes.
+- That any decoded run is text the game displays, or that any text is accepted. A matched
+  on-screen run is still required (`docs/por-ecl-codec-candidates.md`).
+- The meaning of the surrounding opcode. The names and the operand framing come from GoldBox
+  and are hypotheses; the flag does not promote them.
+
+Observation (not evidence of acceptance): on retail `ECL2` block 20 with `spec-menus`, 106
+of 117 `0x80` operands decode to candidate strings that read as ordinary English prose (for
+example the "monster-crawling slums of Phlan" message). That is consistent with the codec,
+but it is a reading by eye of candidate output, and it is not accepted text.
+
+Retail gate (`OPENUA_POR_INSTALL`): every complete `0x80` operand in ECL1-8 is decoded and
+compared with the reference bit layout in `tools/por_ecl_codec_static.py` (the layout the
+emulator verified). The same walk is run with and without the flag, and the instruction
+offsets, lengths and mnemonics must match.
+
+Tests (`tests/test_por_ecl.py`, section "opt-in PoR 0x80 candidate decode"): the four values
+of a full 3-byte group; 1, 2, 4 and 5-byte tails; dropped leftover bits; skipped zero (not
+a terminator); the char-map boundary at `0x1F`/`0x20`; the count limiting the read (a byte
+after the payload is changed and the record does not change); menu count operands decoded in
+place; fail-closed refusals; empty strings; default output with no new keys; the flag
+changing only the additions; the CLI and its provenance fields; and the retail reference
+check.
+
+---
+
 ## Tests
 
 ```sh
@@ -298,6 +357,8 @@ OPENUA_POR_INSTALL="PATH/TO/POOLRAD" tools/.venv/Scripts/python.exe -m pytest te
 - No promotion of `0x98FE` to the PoR vbase. It is the best fit in a diagnostic, and the
   opt-in `--por-vbase` mode is labelled CONDITIONAL with `promoted: false`.
 - No claim that the loader's source `R` starts at block byte 0. That is a stated condition.
+- No accepted or playable text from `--por-decode-strings`. The candidates carry `accepted: false`;
+  the PoR codec evidence is static, and whether the walk reaches the parser at run time is open.
 - No claim that other PoR revisions use this relation. The mode does not check the
   supplied DAX against a matching executable revision.
 - No claim that every target lands on an instruction start. 361 of 3260 retail targets do not.
