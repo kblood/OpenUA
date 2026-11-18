@@ -127,17 +127,18 @@ cross-checks only; none of them is used as a PoR fact.
 - **ECL opcode 0x21 dispatch** (`tools/por_ecl_21_dispatch_probe.py`, see
   [`por-ecl-21-dispatch-probe.md`](por-ecl-21-dispatch-probe.md)). The dispatcher
   arm has a direct `E8` edge to handler `0x19BA`, which makes eleven far calls.
-  Two are VROOMM stubs under the zero-skew model; the other nine have fixup-listed
-  segment words and remain model-dependent. A later file-side check finds that the
-  `0x1A27` argument is the first AL result stored by a three-call loop through
-  `002B:0025`, and its one-word shape fits candidate fill `0x10C7`; the helper's return
-  meaning is unknown. The separate `03D5:0043` dump cross-check matches only the first
-  four bytes of the candidate stub, so its target and argument meaning remain
-  unestablished. The
-  follow-up fixup-residue probe finds that
-  none of the eleven far-call offsets can reach the GEO stub under a paragraph-
-  aligned resident-image model, for any fixup delta; direct calls to the GEO body
-  and runtime reachability remain unexamined.
+  Two are VROOMM stubs under the zero-skew model. Of the other nine fixup-listed
+  calls, four target stub 6's exact five-byte entry in both RAM dumps and one
+  target has a four-byte prefix match to stub 7; the remaining four are unresolved.
+  A later file-side check finds that the `0x1A27` argument is the first AL result
+  stored by a three-call loop through `002B:0025`, and its one-word shape fits
+  candidate fill `0x10C7`; the helper's return meaning is unknown. The `03D5:0043`
+  dump cross-check matches only the first four bytes of stub 7. A separate probe
+  finds that four `03D5:003E` call targets match stub 6 exactly in five bytes in
+  both dumps, and stub 6's proc word points to the GEO-loader candidate `0x2F6FF`.
+  These are memory-byte target checks at unknown instants, not execution or
+  successful-load evidence; the paragraph-aligned model still cannot explain those
+  sites. See [`por-ecl-21-stub6-dump-probe.md`](por-ecl-21-stub6-dump-probe.md).
 - **ECL 0x21 stub-7 dump cross-check** (`tools/por_ecl_21_stub7_dump_probe.py`, see
   [`por-ecl-21-stub7-dump-probe.md`](por-ecl-21-stub7-dump-probe.md)). In both pinned
   RAM dumps, the live target of the fixup-listed `03D5:0043` call matches START stub 7's
@@ -155,12 +156,9 @@ cross-checks only; none of them is used as a PoR fact.
   evidence, not a complete ECL framing or opcode-semantic result.
 - **ECL dispatcher cursor (`0x1B`)** (`tools/por_ecl_handler_cursor_probe.py`, see
   [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md)). The handler
-  increments the cursor once before branching, but one path calls unresolved
-  `0x002B:0x008E`; the whole effect remains open. Under the unvalidated MZ-image
-  far-call model, that target lands at START.EXE `0x053E` (`00 D1 C5 00 00`), outside
-  the accepted and partial VROOMM stub runs. This rejects that model candidate only;
-  it does not identify the callee. The dispatcher loop does not call the classifier
-  directly, so the 12-byte stream prefix is only a classifier-model diagnostic and is
+  increments the cursor once before branching. Its guard-zero far call `002B:008E`
+  maps through a thunk to the classifier bytes in two dumps. This resolves the target
+  bytes but not execution, guard value, or live stream binding; the 12-byte prefix is
   not established as the live stream boundary.
 - **ECL entry origin** (`tools/por_ecl_entry_origin_probe.py`, see
   [`por-ecl-entry-origin-probe.md`](por-ecl-entry-origin-probe.md)). PoR code parses

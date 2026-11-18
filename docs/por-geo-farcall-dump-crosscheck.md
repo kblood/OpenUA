@@ -39,6 +39,13 @@ the GEO stub bytes. The remaining 91 candidate rows belong to absent or
 unmapped groups and remain unobserved. This does not rule out candidates in
 those groups.
 
+This probe tests only the census's paragraph-model candidates and 32-byte
+windows. A separate check of the 0x21 handler group (not among those candidate
+rows because its `03D5:003E` offsets fail the paragraph-residue gate) finds four
+live targets whose first five bytes exactly match START stub 6 in both dumps.
+See [`por-ecl-21-stub6-dump-probe.md`](por-ecl-21-stub6-dump-probe.md). That
+target-byte result does not change the candidate census or establish execution.
+
 ## Limits
 
 - The conclusion is limited to these two captures and the 90 mapped candidate

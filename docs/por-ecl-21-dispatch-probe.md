@@ -5,9 +5,14 @@ retail `GAME.OVR` and `START.EXE` read-only and traces the `0x21` arm of the dis
 and that handler's far calls. Question: does the `0x21` path reach the GEO loader body at `GAME.OVR:0x2F6FF`,
 or supply equivalent archive/block arguments?
 
-**Answer: not established.** The direct edge into the GEO body is absent. Under the zero-skew stub model no
-far call of the handler lands on the GEO stub. Nine of the eleven far calls are model-dependent, so the
-static bytes cannot close the question. This probe does not analyze the call-frame arguments; a later
+**Answer: conditionally mapped in RAM, execution not established.** The direct edge into the GEO body is absent.
+Under the zero-skew model no far call lands on the GEO stub, and the paragraph-residue probe rejects that
+model for every site. A later RAM-dump check finds that four `03D5:003E` calls instead target the exact five-byte
+START stub 6 in both captures; that stub's procedure word points to the GEO-loader candidate at `0x2F6FF`.
+This is a memory-byte target chain, not evidence any call ran. Nine of the eleven calls were model-dependent
+in the original file-only zero-skew analysis; follow-up dump checks now match four to stub 6, and the separate
+`0x1A27` check has only a partial match to stub 7. The other target identities, call arguments, and execution
+remain open. This probe does not analyze the call-frame arguments; a later
 stub-7 cross-check finds the pushed byte is the first local populated from a three-call `002B:0025`
 loop, and that its one-word shape fits the candidate fill, conditional on target identity. The helper's
 return semantics remain open.
@@ -97,7 +102,8 @@ code bytes (`bytes_at_image_f`), which the probe records and does not interpret.
 not in the file, so they are reported as **model-dependent**, not as "not GEO".
 
 The two stub calls are the only far calls whose literal target is a VROOMM stub under the zero-skew model. The
-probe matches them to group `0x74D3` (well-formed, 25 of 25 prologues). Neither stub targets `0x2F6FF`.
+probe matches them to group `0x74D3` (well-formed, 25 of 25 prologues). Neither is the GEO stub. The four
+`03D5:003E` sites are separate from those zero-skew hits and are checked against live target bytes below.
 
 ### 5. The GEO body `0x2F6FF`
 
@@ -112,6 +118,19 @@ probe matches them to group `0x74D3` (well-formed, 25 of 25 prologues). Neither 
 
 So under the zero-skew model the `0x21` path has **no direct edge** to the GEO body. The result is deterministic
 (`test_retail_analysis_is_deterministic`).
+
+### Later RAM cross-check of the four `03D5:003E` sites
+
+The follow-up [stub-6 dump probe](por-ecl-21-stub6-dump-probe.md) maps the handler group uniquely at
+`0x45C40` in both pinned dumps. At `0x1A77`, `0x1A9E`, `0x1AAA`, and `0x1AD6`, the live call bytes
+are `9A 3E 00 3B 1C`, targeting `1C3B:003E` / linear `0x1C3EE`. The first five target bytes are
+`CD 3F 08 0E 00`, an exact match to START stub 6 at `0x3E0C`. Stub 6's proc word `0x0E08` maps
+through owner group `0x2E8F7` to file `0x2F6FF`, the GEO-loader candidate.
+
+This supersedes the earlier statement that all nine non-zero-skew calls were wholly model-dependent:
+four have a memory-byte target match in these dumps. The target is a stub, not a direct call into
+the body. The group is partial, the snapshot instant is unknown, and no call or INT 3Fh dispatch
+is observed. Archive/block arguments and runtime GEO loading remain unestablished.
 
 ### Later RAM cross-check of the `0x1A27` target (partial)
 
@@ -139,7 +158,7 @@ these only as `nearest_decoded_before`, for inspection. No conclusion is drawn f
 | --- | --- | --- |
 | Does the `0x21` arm reach a handler? | **Yes**: `0x3DA3` `E8` to `0x19BA` | decoded, direct |
 | Does the handler make near or indirect calls? | **No** | decoded walk, complete |
-| Does a far call of `0x19BA` reach the GEO body `0x2F6FF`? | **Not under the zero-skew model**; nine far calls are model-dependent. `0x1A27` has a partial RAM prefix match to stub 7, but no full identity or execution evidence. | stub arithmetic; fixup-listed seg words; partial memory-byte cross-check |
+| Does a far call of `0x19BA` target the GEO loader candidate? | **Four calls conditionally target START stub 6 in both dumps**, whose proc word points to `0x2F6FF`. The zero-skew and paragraph-aligned models do not resolve them; execution, INT 3Fh dispatch, and successful loading are not shown. The separate `0x1A27` call has only a partial prefix match to stub 7. | exact five-byte target match, stub proc word and owner offsets; no execution trace |
 | Do the handler's bytes supply GEO archive/block arguments? | **Not established** | `[bp-3]` is the first AL result of a 1..3 call loop through `002B:0025`; the candidate fill's `[bp+6]` byte argument and `retf 2` are stack-compatible, but helper semantics, target identity, value and meaning remain open |
 | Is the `0x21` path reachable from a PoR root? | **Not established** | nine `E8` callers of `0x3EB7`, byte-pattern only |
 
@@ -188,14 +207,14 @@ Refusals (no retail needed): missing input, unpinned input, output inside the in
 
 ## Discriminating next step
 
-Decode the overlay fixup record for each of the nine model-dependent seg-word sites. They lie in the handler's
+Decode the overlay fixup record for each of the remaining model-dependent seg-word sites. They lie in the handler's
 group: descriptor header at `START.EXE` offset `963` (`0x3C3`), code at `GAME.OVR` offset `0x0D46`, `fixupsz 804`. Each record says whether the seg word is a resident or stub-segment
 reference with a known base, or another overlay reference.
 
-- If a record ties a seg word to a known base, recompute that call's target under that base. The result decides
-  whether any of the nine lands on the GEO stub at `START.EXE` `15884`. That is a static answer.
-- If no record gives a base, the static question is closed as "model-dependent". The next evidence would then be
-  a runtime far-call trace at the nine sites `0x1A27`–`0x1B27` on a stream that carries key `0x21`. That is
+- If a record ties a seg word to a known base, recompute that call's target under that base. This could further
+  explain the four dump-mapped stub-6 targets and decide whether any remaining site lands on a stub.
+- If no record gives a base, the remaining static targets stay model-dependent. The next evidence would then be
+  a runtime far-call trace at the handler sites `0x1A27`–`0x1B27` on a stream that carries key `0x21`. That is
   outside this slice.
 
 ---
@@ -204,6 +223,8 @@ reference with a known base, or another overlay reference.
 
 - `tools/por_ecl_21_dispatch_probe.py`: the probe (reads `por_loadpieces_handler`, `por_farcall_resolve` and
   `por_ecl_handler_cursor_probe` read-only; edits none of them).
+- `tools/por_ecl_21_stub6_dump_probe.py`: the follow-up check of the four live `03D5:003E` targets (see
+  [`por-ecl-21-stub6-dump-probe.md`](por-ecl-21-stub6-dump-probe.md)).
 - `tests/test_por_ecl_21_dispatch_probe.py`: 19 tests (synthetic refusals, retail expectations, mutation and
   falsification controls).
 - `docs/por-ecl-21-dispatch-probe.md`: this document.

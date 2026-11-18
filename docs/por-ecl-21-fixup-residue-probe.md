@@ -11,9 +11,10 @@ are used. No GoldBox or other-title rule was read or used, and nothing was run a
 
 ## Answer
 
-**No fixup record ties any far call to the GEO stub.** Under a paragraph-aligned resident image, no listed site
-can reach `15884` for any value of the fixup delta. So the question is closed for the paragraph-aligned model.
-What stays open is narrow: a sub-paragraph placement of the image, for which the bytes give no support.
+**No fixup record names a base, and the paragraph-aligned model still cannot reach the GEO stub.** A later
+memory-byte cross-check maps four `03D5:003E` operands to the exact five-byte GEO stub 6 in two dumps
+([`por-ecl-21-stub6-dump-probe.md`](por-ecl-21-stub6-dump-probe.md)). That is a direct observation for those
+sites and snapshots, but it does not supply a general sub-paragraph relocation rule or execution evidence.
 
 | Question | Answer | Evidence class |
 | --- | --- | --- |
@@ -115,7 +116,9 @@ Self-checks: `preconditions_hold`, `listed_seg_words_expected` (11), `fixup_reco
    records. A later [stub-7 dump cross-check](por-ecl-21-stub7-dump-probe.md) observes that the live target bytes
    for `0x1A27` begin with the first four bytes of START stub 7 in two dumps, but the fifth byte and the 16-byte
    window differ. This is not full target identity and does not show execution. The paragraph-residue conclusion
-   above remains a file-model result; the memory prefix does not establish a sub-paragraph placement rule.
+  above remains a file-model result. The four `03D5:003E` sites separately match stub 6 exactly in five bytes,
+  but this still does not establish that a call executed or that a general sub-paragraph placement rule exists;
+  see [`por-ecl-21-stub6-dump-probe.md`](por-ecl-21-stub6-dump-probe.md).
 
 The 0x21 doc's "discriminating next step" named two branches: a record giving a base (not found), or no base (closed as
 model-dependent). The result here is the first branch's negative: no record ties a site to the stub under the paragraph

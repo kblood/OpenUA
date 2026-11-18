@@ -1,6 +1,6 @@
 # PoR far-call census for the GEO loader
 
-**Status: bounded static diagnostic. `playable: false`. No GEO target, block,
+**Status: bounded static diagnostic. `playable: false`. No executed GEO load, block,
 area, or campaign mapping is established.** The probe checks decoded calls in
 parsed `GAME.OVR` overlay bodies against the resident GEO VROOMM stub in
 `START.EXE`. Candidates are arithmetic possibilities only.
@@ -27,7 +27,11 @@ hashes matched the repository pins and were unchanged after analysis:
 
 The verdict is `candidate-given-di-not-established`. Every candidate depends
 on a fixup delta or literal-address interpretation; no candidate is evidence
-that the routine ran. The output is in ignored
+that the routine ran. A separate dump probe later mapped four `03D5:003E` calls
+in the 0x21 handler to the exact five-byte stub-6 entry in both captures, but
+those sites do not pass this census's paragraph-residue filter and execution
+remains unknown; see [`por-ecl-21-stub6-dump-probe.md`](por-ecl-21-stub6-dump-probe.md).
+The output is in ignored
 `data/work/por-geo-farcall-census-20261118/`.
 
 ## What is checked
@@ -56,9 +60,9 @@ bodies; it does not cover all image bytes, indirect targets, or runtime paths.
 
 - “Strong” means a decoded path from a structurally parsed stub, not runtime
   reachability. “Weak” means a prologue-pattern seed only.
-- The 181 candidates do not identify a unique loader caller, because fixup
-  deltas and live far-call targets are not observed. They are not an area or
-  DAX selector mapping.
+- The 181 paragraph-model candidates do not identify a unique loader caller.
+  The separate stub-6 memory match covers only four sites in two snapshots and
+  does not establish execution. Neither result is an area or DAX selector mapping.
 - The paragraph-aligned resident-image arithmetic is a model. Its inputs are
   reported, not promoted to a loader fact.
 - Two strong walks are incomplete; partial groups are included as partial.
