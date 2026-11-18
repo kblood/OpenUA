@@ -183,6 +183,16 @@ high nibble (wall-art code) of the selected edge. The `jt955` switch treats code
 tested step at that edge. It does not show whether the original PoR game blocks the corresponding
 edge, and the save-to-GEO edge binding remains a hypothesis.
 
+**Interpretation of `jt953 res -120` (source cross-check).** This is not an error or a
+movement distance. In `jt948`, the `jt953()` result is narrowed to `signed char`. In `jt953`
+mode 3, the Move sub-mode calls `jt171`, whose committed direction results include 129..136;
+code 136 is the wrap arm and stores facing 0. Narrowing 136 to a signed byte prints `-120`.
+The later `jt955` overland arm uses that facing to form the candidate cell and calls `jt210`
+for its edge. Therefore the logged candidate `(15,3)` is the edge tested after selecting
+facing 0. It is not evidence that the input moved forward relative to the entry facing 6
+(west). The test exercised a direction-pad selection and a blocked OpenUA edge; it did not
+demonstrate a successful move from the saved pose.
+
 For a converter-to-runtime consistency check, the candidate GEO2 block-20 source cell `(x=15,
 y=4)` in the emitted `por_map.json` has planes `[0xEB,0xE0,0x00,0x04]`; under the converter's
 still-provisional compass labels, its N edge is slot 14 / door 0. The generated OpenUA cell
