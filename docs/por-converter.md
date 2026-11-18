@@ -65,6 +65,12 @@
   through the existing pipeline. The area and entry remain placeholders; a passing
   host loader check does not run OpenUA. See
   [`por-geo-single-block-plan.md`](por-geo-single-block-plan.md).
+- **Saved-position GEO candidate** (`tools/por_save_geo_join_plan.py`): for a
+  caller-selected pinned save, checks whether the saved cell signature uniquely
+  matches a cell in one decoded GEO block and can emit a one-area candidate plan.
+  SAVGAMA has one compatible block; SAVGAMJ remains ambiguous. The area/block join,
+  coordinates and facing are hypotheses; the result is not a runtime binding or a
+  playable module. See [`por-save-geo-join-plan.md`](por-save-geo-join-plan.md).
 
 Every output says what it is. Each file carries `"playable": false`, or a
 MAP-ONLY banner in the report. A test-only AREATEST sweep has now read and
