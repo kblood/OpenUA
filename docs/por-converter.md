@@ -38,6 +38,11 @@
   reachable `LOAD_PIECES` (0x37) instructions in both framing modes. It preserves
   operands and marks the CoK interpretation as a hypothesis; most walks stop early.
   See [`por-loadpieces-census.md`](por-loadpieces-census.md).
+- **GEO-loader far-call census** (`tools/por_geo_farcall_census.py`): decodes
+  bounded paths in parsed GAME.OVR groups and checks far-call operands against
+  their fixup tables. The pinned retail run found 181 arithmetic candidates but
+  no established caller or GEO mapping. See
+  [`por-geo-farcall-census.md`](por-geo-farcall-census.md).
 - **Pipeline** (`tools/por_pipeline.py`): one repeatable run over a user install:
   GEO map-only designs (optional plan: one area per design, or a multi-area
   map-only design, see below), and with `--with-ecl-text` the ECL string
