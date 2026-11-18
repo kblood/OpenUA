@@ -118,6 +118,12 @@ cross-checks only; none of them is used as a PoR fact.
   none of the eleven far-call offsets can reach the GEO stub under a paragraph-
   aligned resident-image model, for any fixup delta; direct calls to the GEO body
   and runtime reachability remain unexamined.
+- **ECL 0x21 stub-7 dump cross-check** (`tools/por_ecl_21_stub7_dump_probe.py`, see
+  [`por-ecl-21-stub7-dump-probe.md`](por-ecl-21-stub7-dump-probe.md)). In both pinned
+  RAM dumps, the live target of the fixup-listed `03D5:0043` call matches START stub 7's
+  first four bytes and proc word, but not its trailer or 16-byte window. The GEO fill
+  overlay is absent from both dumps, so this is memory-byte evidence only; it proves
+  neither a call nor execution of the fill routine.
 - **ECL dispatcher cursor (`0x1B`)** (`tools/por_ecl_handler_cursor_probe.py`, see
   [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md)). The handler
   increments the cursor once before branching, but one path calls unresolved
