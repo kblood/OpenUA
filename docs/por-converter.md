@@ -696,14 +696,26 @@ against PoR's WALLDEF art. Door flags 2 and 3 have distinct diagnostic labels
 `geo_reader_binding: unproven` and `general_rule_proven: false`. The per-cell
 descriptor and zone bits are not written.
 
-### Coordinate and wall mapping (tested)
+### Coordinate and wall mapping (runtime-supported for one route)
 
-Under the Gen1 decoder model, source cell `(x, y)` maps to OpenUA
-`cell(col=x, row=y)` and source edge labels are N, E, S, W. The OpenUA
-runtime trace below establishes its target edge order as N/E/S/W; `por_map.py`
-writes the model-labelled values in that order. The entry is
-`set_entry_point(0, row=y, col=x, facing)`. `tests/test_por_map.py` checks that
-the mapping is not transposed and that `Geo.parse(Geo.build())` round-trips.
+The flag-2 runtime comparison found an axis mismatch in the first generated
+fixture. With source cell `(14,10)` placed at OpenUA `cell(col=14,row=10)`, a
+west-facing step was allowed but landed at `(9,14)` in OpenUA coordinates. A
+second run used the same binary and wall bytes, transposing only the GEO cell
+grid and entry point. It started at `(14,10)` and landed at `(13,10)`, matching
+the recorded PoR route. The converter now maps PoR source x to OpenUA row and
+source y to OpenUA column: `cell(col=y,row=x)` and
+`set_entry_point(0,row=x,col=y,facing)`. The retail route and two disposable
+OpenUA logs are documented in
+[`por-door-flag2-candidate-runtime-20261118.md`](por-door-flag2-candidate-runtime-20261118.md).
+
+This is runtime evidence for one route, not a claim that every axis-dependent
+feature has been checked. Source edge labels remain N/E/S/W, and the writer
+keeps wall bytes in N/E/S/W order. The test route confirms that the recorded
+west edge is selected for the facing-6 interaction after the cell transform.
+The plane-3 probe establishes only that direction code 6 selects bits 6-7; it
+does not independently name all compass directions. `tests/test_por_map.py`
+pins the observed source-to-OpenUA transform and the GEO container round-trip.
 
 Entry facings use OpenUA's 3-bit compass codes, not the four edge-order indices:
 N=0, E=2, S=4, W=6 (odd codes are diagonal headings). The engine normalizes 0
@@ -744,7 +756,8 @@ prove that a retail block decodes this way.
 
 Covered: RLE round-trip and envelope controls; each container refusal; TOC index
 and id selection; plane layout at a known cell; GEO size refusals; every edge
-rule; coordinate mapping (not transposed) and round-trip through `geo.py`;
+rule; the runtime-supported PoR x/y to OpenUA row/column transform and
+round-trip through `geo.py`;
 reachability and disagreement diagnostics; expectation parsing and FAIL exit;
 output and install refusals, which must not create the repository folder; an
 end-to-end run that leaves the source hash unchanged and is deterministic

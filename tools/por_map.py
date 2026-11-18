@@ -394,19 +394,21 @@ def parse_expectation(text: str) -> dict:
 def build_openua_geo(cells: list[dict], entry: Optional[tuple[int, int, int]],
                      flag2_passability: Optional[int] = None) -> Geo:
     """A 16 x 16 OpenUA area built with OpenUA's own geo.py. Cell (x,y) is
-    addressed as cell(col=x, row=y); the wall bytes come from map_edge. Source
-    edges and OpenUA's runtime selector are ordered N/E/S/W, so write them in
-    that order. The plane-2 descriptor and zone bits are left at zero (not
-    mapped). ``flag2_passability`` is the opt-in candidate (None = default)."""
+    addressed as cell(col=y, row=x): PoR's x axis maps to OpenUA's row axis and
+    its y axis to OpenUA's column axis. A controlled runtime trace confirms
+    this transpose for the flag-2 route at source (14,10): entry (14,10),
+    facing west, steps to (13,10). Wall bytes retain N/E/S/W order. The plane-2
+    descriptor and zone bits are left at zero (not mapped).
+    ``flag2_passability`` is the opt-in candidate (None = default)."""
     g = Geo.blank(GRID_W, GRID_H)
     g.hdr[4:14] = ART_BLOCK          # the known-good art binding dsn.py uses
     for c in cells:
         walls = tuple(map_edge(*c["edges"][k], flag2_passability=flag2_passability)[0]
                       for k in ("N", "E", "S", "W"))
-        g.set_cell(c["x"], c["y"], walls=walls)
+        g.set_cell(c["y"], c["x"], walls=walls)
     if entry is not None:
         ex, ey, facing = entry
-        g.set_entry_point(0, row=ey, col=ex, facing=facing)
+        g.set_entry_point(0, row=ex, col=ey, facing=facing)
     return g
 
 
@@ -448,6 +450,12 @@ def build_normalized(source: dict, cells: list[dict], expectations: list[dict],
         "source": source,
         "grid": {"width": GRID_W, "height": GRID_H,
                  "cell_index": "y * 16 + x", "row_0": "north"},
+        "coordinate_mapping": {
+            "source_x": "OpenUA row",
+            "source_y": "OpenUA column",
+            "evidence": "single controlled PoR door route matched after transposing the test GEO cell grid and entry",
+            "status": "runtime-supported-single-route",
+        },
         "cells": cells_out,
         "diagnostics": diagnostics,
         "edge_mapping_evidence": EDGE_MAPPING_EVIDENCE,
@@ -486,6 +494,7 @@ def render_report(norm: dict, warnings: list[str], unsupported: list[str]) -> st
         "| compressed size | %d |" % s["comp_size"],
         "| decoded sha256 | `%s` |" % s["decoded_sha256"],
         "| grid | 16 x 16, row 0 north |",
+        "| source coordinate mapping | PoR x -> OpenUA row; PoR y -> OpenUA column (single runtime route) |",
         "",
         "## Edge mapping (Gen1 slot/door -> OpenUA wall byte)",
         "",

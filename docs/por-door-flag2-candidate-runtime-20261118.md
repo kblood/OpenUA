@@ -30,11 +30,43 @@ This establishes that, in this OpenUA test path, passability 2 reaches the
 same blocked-action decision and lets its item-0 Force branch allow movement;
 passability 15 does not. It does not verify the visible label on item 0.
 
+## Follow-up: source-to-OpenUA coordinate transform
+
+The first candidate run exposed an axis mismatch. I repeated the same key
+sequence and used the same test binary, but transposed the 16x16 GEO cell grid
+and entry coordinates in a fresh copy. The wall bytes, including the tested
+`0x2A`, were unchanged. The two candidate runs report:
+
+| Fixture | Initial OpenUA cell | Facing | Selected edge | Cell at next forward decision |
+| --- | --- | ---: | ---: | --- |
+| Direct x/y placement | row 10, column 14 | 6 | 2 | row 9, column 14 |
+| Transposed cell grid and entry | row 14, column 10 | 6 | 2 | row 13, column 10 |
+
+The second destination matches the recorded PoR route `(13,10)`. The selected
+edge remains passability 2 in both runs, so the transform preserves the tested
+door interaction while aligning this route's coordinates. The converter now
+places source `(x,y)` at OpenUA `cell(col=y,row=x)` and writes the entry as
+`row=x, col=y`. This is evidence for one route; it does not validate all areas,
+events, transitions, or direction labels.
+
+The final comparison is in ignored folders
+`data/work/por-flag2-candidate-20261118/run-cand-direct-final/` and
+`run-cand-transpose/`. The second folder was made by transposing every
+six-byte cell record in `GEO020.DAT` and swapping the header entry row/column;
+the original run folders were left intact. The run script used the rebuilt
+68000 test binary in both cases; SHA-256 was
+`1b1a8fcddd0dbfc0d57c27a6087d728e77c0799bb27e358ccce7e4303d66d705`. A final
+direct-placement rerun in `run-cand-direct-final/` produced that first result
+with the same binary. Its GEO hash is `42696ab54d0cf32bb749ab87207311a78f9ac132085fd68cd8088f743c2964f4`; the transposed
+GEO hash is `b8c35f0f5f524ce077b78e517d0ab65809a966c2bc009444d68069e1de191644`.
+The updated converter emitted a byte-identical GEO to the transposed runtime
+fixture. `por_dsn_load_smoke.py` passes its host checks on that emitted design;
+it does not execute the engine.
+
 ## Limits
 
-- The candidate did **not** reproduce the original destination: the next
-  forward-decision log was row 9, column 14, facing 6. The cause is unresolved;
-  no destination parity is claimed.
+- The coordinate result is a single-route runtime check. Other coordinate
+  joins and the full map have not been checked.
 - The in-memory edge remained 2, and all 16 files in the design folder had
   identical hashes before and after both runs. OpenUA did not persist an
   opened edge in this experiment.

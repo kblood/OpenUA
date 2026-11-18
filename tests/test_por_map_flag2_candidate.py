@@ -3,8 +3,9 @@
 The default conversion encodes Gen1 door flag 2 as passability 15 (the
 Blocked-menu edge). The candidate encodes it as passability 2 and is reachable
 ONLY through an explicit argument / ``--candidate-flag2-passable``. These tests
-pin three things: the default output is unchanged byte-for-byte, the candidate
-changes only flag-2 wall bytes, and the candidate is never on by default.
+pin three things: the corrected default output has a deterministic golden, the
+candidate changes only flag-2 wall bytes, and the candidate is never on by
+default.
 
 Synthetic fixtures only (tests/test_por_map.py helpers); no retail data.
 """
@@ -65,15 +66,14 @@ def test_candidate_constant_is_two_and_not_default():
     assert pm.map_edge(10, 2)[0] == 0xFA  # default flag-2 encoding is still 15
 
 
-# ---- golden: default output of the synthetic fixture is byte-identical ------
+# ---- golden: default output after the one-route axis correction ------------
 
-# Recorded from the converter BEFORE the candidate option existed
-# (data/work/por-flag2-candidate-20261118/golden-pre.txt, script golden_hash.py).
+# Recorded after the runtime-supported PoR x/y -> OpenUA row/column transform.
 GOLDEN_DEFAULT = {
-    "por_map.json": "d01afbeab8b19ff2825c54f1bbdd687469404e9bd89e4eae542f81135bef9ce1",
-    "por_map_report.md": "014935d6278bdbf0b2d85383d5b0e8ac322cb69017bc7c8fb204fac608e07020",
+    "por_map.json": "ac35defe6ee1ee3f75eea3d72a3ab8ee8d55fe935e813666289ec9640fae3efc",
+    "por_map_report.md": "1cc39b34c7299f346ae1056e06c2a592cf63301de18aa4266f532670a487b186",
     "PORMAP.DSN/GAME001.DAT": "918e07b80465a8cdf4d572dab356dce6f2f373a0faea14a862f50e867757c506",
-    "PORMAP.DSN/" + GEO_NAME: "095ece030f4bea66574911449126a1d1c7e5bd89ed6a79c6c598d01dc88418a0",
+    "PORMAP.DSN/" + GEO_NAME: "1b9aed39096b77cb4f471c3facaedbb12fa4802883c9ce0e19a8a36ffc50e900",
 }
 
 
@@ -90,7 +90,7 @@ def _hashes(out: Path) -> dict:
     return res
 
 
-def test_default_output_matches_pre_candidate_golden(tmp_path):
+def test_default_output_matches_transposed_axis_golden(tmp_path):
     install = T.make_install(tmp_path)
     out = tmp_path / "out"
     assert pm.main(_convert_args(install, out)) == 0

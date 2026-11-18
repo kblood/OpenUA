@@ -293,7 +293,7 @@ def test_door_two_and_three_split_in_normalized_counts_with_identical_wall_bytes
     # Both edges emit the same wall byte. Check the byte multiset so the test
     # does not depend on the writer's stored edge order.
     g = pm.build_openua_geo(cells, None)
-    for xy in ((5, 5), (6, 5)):
+    for xy in ((5, 5), (5, 6)):
         walls = sorted(list(g.cell(*xy)[:4]))
         assert walls == [0, 0, 0, 0xFA], (xy, walls)
     assert norm["edge_mapping_evidence"]["rules"]["locked"]["status"] == \
@@ -308,19 +308,19 @@ def test_facing_names_use_engine_cardinal_codes():
     assert pm.FACINGS == {"north": 0, "east": 2, "south": 4, "west": 6}
 
 
-def test_openua_geo_coordinates_are_not_transposed():
-    """Gen1-model (x,y) -> OpenUA cell(col=x, row=y); output edge slots use the OpenUA order."""
+def test_por_coordinates_map_x_to_openua_row_and_y_to_column():
+    """The PoR source x/y axes transpose into OpenUA row/column coordinates."""
     cells = pm.decode_gen1_geo(geo_raw(lambda x, y: (
         (2, 0), (4, 0), (6, 0), (8, 0), 0) if (x, y) == (3, 5) else (
         (0, 0), (0, 0), (0, 0), (0, 0), 0)))
     g = pm.build_openua_geo(cells, (3, 5, pm.FACINGS["east"]))
     assert g.width == 16 and g.height == 16
-    cell = g.cell(3, 5)
+    cell = g.cell(5, 3)
     assert list(cell[:4]) == [0xE2, 0xE4, 0xE6, 0xE8]
-    # the transposed cell (5,3) and its neighbours stay open
-    assert list(g.cell(5, 3)[:4]) == [0, 0, 0, 0]
-    assert g.entry_point(0) == (5, 3, 2)        # (row, col, engine facing)
-    assert Geo.parse(g.build()).cell(3, 5) == cell
+    # The original coordinate is open; only (source x,source y)=(3,5) moved.
+    assert list(g.cell(3, 5)[:4]) == [0, 0, 0, 0]
+    assert g.entry_point(0) == (3, 5, 2)        # row=x, col=y, engine facing
+    assert Geo.parse(g.build()).cell(5, 3) == cell
     assert bytes(g.hdr[4:14]) == ART_BLOCK
 
 
@@ -329,11 +329,11 @@ def test_openua_geo_builds_round_trip_and_fixed_size():
     raw = pm.build_openua_geo(cells, (3, 5, pm.FACINGS["east"])).build()
     assert len(raw) == 12962
     back = Geo.parse(raw)
-    assert list(back.cell(7, 2)[:4]) == [0x19, 0, 0, 0]     # N slot 9 door 1 -> secret-door passage
+    assert list(back.cell(2, 7)[:4]) == [0x19, 0, 0, 0]     # source (7,2) -> OpenUA (row7,col2)
     assert list(back.cell(10, 10)[:4]) == [0, 0, 0xF6, 0]   # S slot 6 door 2 -> blocked (bash/knock)
-    assert list(back.cell(1, 5)[:4]) == [0, 0, 0, 0]        # descriptor 0x8E is not mapped
-    assert back.cell_special(1, 5) == 0
-    assert list(back.cell(0, 5)[:4]) == [0, 0, 0, 0xE3]     # W perimeter: slot 3 solid
+    assert list(back.cell(5, 1)[:4]) == [0, 0, 0, 0]        # descriptor 0x8E is not mapped
+    assert back.cell_special(5, 1) == 0
+    assert list(back.cell(5, 0)[:4]) == [0, 0, 0, 0xE3]     # source W perimeter -> transposed cell
 
 
 # ---- diagnostics -------------------------------------------------------------
@@ -416,6 +416,12 @@ def test_end_to_end_emits_map_only_design(tmp_path, capsys):
     assert norm["source"]["block_id"] == 18 and norm["source"]["raw_size"] == 1026
     assert norm["source"]["sha256"] == hashlib.sha256(
         (install / "POOLRAD" / "GEO1.DAX").read_bytes()).hexdigest()
+    assert norm["coordinate_mapping"] == {
+        "source_x": "OpenUA row",
+        "source_y": "OpenUA column",
+        "evidence": "single controlled PoR door route matched after transposing the test GEO cell grid and entry",
+        "status": "runtime-supported-single-route",
+    }
     assert norm["expectations"][0]["ok"] is True
     assert len(norm["cells"]) == 256
 
@@ -423,6 +429,7 @@ def test_end_to_end_emits_map_only_design(tmp_path, capsys):
     assert "MAP-ONLY" in report and "Not a playable module claim" in report
     assert "One PoR DOS runtime route supports" in report
     assert "Flag 3 is a CoK-only hypothesis" in report
+    assert "PoR x -> OpenUA row; PoR y -> OpenUA column" in report
     assert "ECL scripts and every event" in report
 
     dsn = out / "PORMAP.DSN"
@@ -430,7 +437,7 @@ def test_end_to_end_emits_map_only_design(tmp_path, capsys):
     assert game[48] == 5 and game[49] == 1           # start area, entry 1
     geo = Geo.parse((dsn / "GEO005.DAT").read_bytes())
     assert geo.width == 16 and geo.height == 16
-    assert geo.entry_point(0) == (5, 3, 2)           # row, col, engine east code
+    assert geo.entry_point(0) == (3, 5, 2)           # PoR x/y -> OpenUA row/col
 
 
 def test_end_to_end_is_deterministic(tmp_path):
