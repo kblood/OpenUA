@@ -194,6 +194,15 @@ joined to a loaded GEO block's plane 3. Therefore the branch establishes
 `GEO door flag 1 -> passable`. Which events set or clear plane-3 fields also
 remains unknown.
 
+The all-transfer route census ([`por-door-entry-route-census.md`](por-door-entry-route-census.md))
+then checked decoded near jumps, far jumps, and transfers into non-prologue
+locations across the walked GAME.OVR groups and START.EXE image closure. It
+found no additional decoded transfer to stub 1, the writer or the clearer.
+The only decoded writer/clearer callers remain the six previously known near
+calls. This is a bounded negative: four walks stop at unsupported opcodes,
+group-external bytes are not decoded, and data-driven dispatch is not covered.
+It does not identify the writer/clearer trigger or change the door mapping.
+
 ## Evidence class 3: OpenUA source-level movement behavior
 
 `tools/dsn.py` (wall byte comment) and `src/engine/boot.c` define the high
@@ -346,9 +355,10 @@ the other flags. Tests assert the unchanged wall byte for both door 2 and door
 
 ## Next discriminating observation
 
-The direct and bounded indirect-call censuses are complete; their results are
-in [`por-door-caller-probe.md`](por-door-caller-probe.md) and
-[`por-door-indirect-probe.md`](por-door-indirect-probe.md). The startup DS lead
+The direct and bounded indirect-call censuses, plus the decoded jump/far-jump
+census, are documented in [`por-door-caller-probe.md`](por-door-caller-probe.md),
+[`por-door-indirect-probe.md`](por-door-indirect-probe.md), and
+[`por-door-entry-route-census.md`](por-door-entry-route-census.md). The startup DS lead
 at START function `0x0A9FC` has since been checked at runtime (see
 [`por-int3f-live-dispatch.md`](por-int3f-live-dispatch.md)): after relocation,
 `DS=0x14A0`, `DS:0x43F0` contains `E5 02 C6 12`, and the far call reaches
@@ -359,12 +369,15 @@ would identify only a trigger path; it would not establish the writer's
 gameplay event. The reader branch effects are now decoded statically, but
 their input is not yet tied to a specific loaded GEO cell.
 
-The next discriminator is to run the OpenUA-converted GEO2 block-20 flag-2
-route and compare the menu, Bash success, persistence and reverse crossing with
-the original trace. Separately, establish the reader's live target and trace
+The next static discriminator is to extend the decoder for the four unsupported
+opcode stops and re-run the route census. If that still finds no transfer, a
+data-driven trigger requires runtime memory evidence. Separately, establish the
+reader's live target and trace
 its buffer back to the loaded GEO block, so its 2-bit return can be paired
 with the raw door flag. The writer's caller/event remains a separate open
-edge. The current direct retail capture route is blocked at copy protection (see
+edge. The OpenUA-converted GEO2 block-20 flag-2 route should also be compared
+for menu behavior, successful Bash, persistence and reverse crossing against
+the original trace. The current direct retail capture route is blocked at copy protection (see
 [`por-wall-runtime-capture-attempt.md`](por-wall-runtime-capture-attempt.md)).
 Until those observations close the byte-to-reader link and OpenUA parity, the
 general mapping branches stay provisional.

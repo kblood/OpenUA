@@ -198,6 +198,12 @@ cross-checks only; none of them is used as a PoR fact.
   the field or justify a door-flag conversion. The separate INT 3F dispatch-entry
   trace remains unresolved and is documented in
   [`por-door-ds-entry-probe.md`](por-door-ds-entry-probe.md).
+- **Plane-3 writer trigger** (`tools/por_door_entry_route_census.py`, see
+  [`por-door-entry-route-census.md`](por-door-entry-route-census.md)). The bounded
+  decoded-transfer census finds no new route to stub 1 or to the writer/clearer;
+  only the six previously known near calls reach the latter two. Four walks stop
+  at unsupported opcodes and data-driven dispatch remains outside the census, so
+  the trigger and general door semantics remain unresolved.
 
 The module is still map-only and unplayable. Area and start mapping are unknown, and
 events, text, art and campaign behaviour are absent.
