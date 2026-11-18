@@ -285,8 +285,22 @@ EDGE_MAPPING_EVIDENCE = {
 }
 
 
-def map_edge(slot: int, door: int) -> tuple[int, str]:
-    """Return (OpenUA wall byte, rule name) for one Gen1 edge."""
+# OPT-IN CANDIDATE ONLY. The default encodes door flag 2 as passability 15 (the
+# Blocked-menu edge). This candidate encodes flag 2 as passability 2 instead,
+# which the engine routes to the same Blocked menu but skips the
+# passability-15-only FORCE refusal. It is never applied unless a caller asks
+# for it (``--candidate-flag2-passable``); it is not the default and is not a
+# verified PoR rule.
+CANDIDATE_FLAG2_PASSABILITY = 2
+
+
+def map_edge(slot: int, door: int,
+             flag2_passability: Optional[int] = None) -> tuple[int, str]:
+    """Return (OpenUA wall byte, rule name) for one Gen1 edge.
+
+    ``flag2_passability`` is None for the default conversion (flag 2 -> 15).
+    Only an explicit opt-in candidate sets it; the rule name stays "locked"
+    so the default rule counts and evidence labels do not change."""
     if slot == 0:
         return 0x00, "open"
     if door == 0:
@@ -294,7 +308,8 @@ def map_edge(slot: int, door: int) -> tuple[int, str]:
     if door == 1:
         return (1 << 4) | slot, "auto-door"
     if door == 2:
-        return (15 << 4) | slot, "locked"
+        p = 15 if flag2_passability is None else flag2_passability
+        return (p << 4) | slot, "locked"
     return (15 << 4) | slot, "door3-unresolved"
 
 
@@ -376,16 +391,17 @@ def parse_expectation(text: str) -> dict:
     return {"x": x, "y": y, "value": value, "mask": mask}
 
 
-def build_openua_geo(cells: list[dict], entry: Optional[tuple[int, int, int]]) -> Geo:
+def build_openua_geo(cells: list[dict], entry: Optional[tuple[int, int, int]],
+                     flag2_passability: Optional[int] = None) -> Geo:
     """A 16 x 16 OpenUA area built with OpenUA's own geo.py. Cell (x,y) is
     addressed as cell(col=x, row=y); the wall bytes come from map_edge. Source
     edges and OpenUA's runtime selector are ordered N/E/S/W, so write them in
     that order. The plane-2 descriptor and zone bits are left at zero (not
-    mapped)."""
+    mapped). ``flag2_passability`` is the opt-in candidate (None = default)."""
     g = Geo.blank(GRID_W, GRID_H)
     g.hdr[4:14] = ART_BLOCK          # the known-good art binding dsn.py uses
     for c in cells:
-        walls = tuple(map_edge(*c["edges"][k])[0]
+        walls = tuple(map_edge(*c["edges"][k], flag2_passability=flag2_passability)[0]
                       for k in ("N", "E", "S", "W"))
         g.set_cell(c["x"], c["y"], walls=walls)
     if entry is not None:
@@ -579,9 +595,16 @@ def list_toc(path: Path) -> str:
 def convert(dax_path: Path, out: Path, *, block_id: Optional[int],
             index: Optional[int], expect: list[dict],
             entry: Optional[tuple[int, int, int]], area: int, name: str,
-            title: Optional[str]) -> dict:
+            title: Optional[str],
+            flag2_passability: Optional[int] = None) -> dict:
     """Run the whole slice. Returns the normalized map. Writes files only to
-    ``out``. The source file is read once and never written."""
+    ``out``. The source file is read once and never written.
+
+    ``flag2_passability`` is an OPT-IN candidate (see CANDIDATE_FLAG2_PASSABILITY).
+    None, the default, leaves every output byte as it was before the option
+    existed."""
+    if flag2_passability is not None and not (0 <= flag2_passability <= 15):
+        raise PorMapError("candidate flag-2 passability must be 0..15")
     src_dir = dax_path.parent
     out = validate_output_dir(src_dir, out)
     data = _read_source(dax_path)
@@ -632,10 +655,14 @@ def convert(dax_path: Path, out: Path, *, block_id: Optional[int],
                    "entry": {"x": ex_, "y": ey_, "facing": facing_name(facing)}}
     if any(not e["ok"] for e in expectations):
         warnings.append("one or more expectations FAILED (see Expectations)")
+    if flag2_passability is not None:
+        warnings.append("OPT-IN CANDIDATE: door flag 2 encoded as passability %d "
+                        "(default is 15); not the default conversion"
+                        % flag2_passability)
 
     out.mkdir(parents=True, exist_ok=True)
     if entry is not None:
-        geo = build_openua_geo(cells, entry)
+        geo = build_openua_geo(cells, entry, flag2_passability=flag2_passability)
         d = Design(name, title=emitted["title"])
         d.start_area = area
         d.start_entry = 1
@@ -644,11 +671,24 @@ def convert(dax_path: Path, out: Path, *, block_id: Optional[int],
         emitted["folder"] = folder_abs.relative_to(out).as_posix()
 
     norm = build_normalized(source, cells, expectations, entry, emitted)
+    report = render_report(norm, warnings, UNSUPPORTED_MAP_ONLY)
+    if flag2_passability is not None:
+        norm["candidate"] = {
+            "opt_in": True,
+            "default": False,
+            "rule": "locked",
+            "flag2_passability": flag2_passability,
+            "default_flag2_passability": 15,
+            "status": "opt-in candidate; not verified; not promoted to default",
+        }
+        report += ("\n## OPT-IN CANDIDATE (not the default)\n\n"
+                   "Door flag 2 is encoded as passability %d instead of 15. "
+                   "This output is for a bounded runtime experiment only.\n"
+                   % flag2_passability)
     # Deterministic output: sorted JSON keys, no timestamps.
     (out / "por_map.json").write_text(
         json.dumps(norm, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    (out / "por_map_report.md").write_text(
-        render_report(norm, warnings, UNSUPPORTED_MAP_ONLY), encoding="utf-8")
+    (out / "por_map_report.md").write_text(report, encoding="utf-8")
     return {"norm": norm, "warnings": warnings, "folder": folder_abs}
 
 
@@ -675,6 +715,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--area", type=int, default=DEFAULT_AREA)
     ap.add_argument("--name", default=DEFAULT_NAME, help="design name, 1..8 chars")
     ap.add_argument("--title", default=None, help="GAME001 title (31 bytes max)")
+    ap.add_argument("--candidate-flag2-passable", type=int, default=None, metavar="N",
+                    help="OPT-IN CANDIDATE ONLY (default: off): encode door flag 2 "
+                         "as OpenUA passability N (0..15) instead of 15. Not the "
+                         "default; never applied unless given.")
     args = ap.parse_args(argv)
     try:
         if args.dax is not None:
@@ -695,7 +739,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             entry = (x, y, FACINGS[args.facing])
         result = convert(dax, args.out, block_id=args.block, index=args.index,
                          expect=expect, entry=entry, area=args.area,
-                         name=args.name.upper(), title=args.title)
+                         name=args.name.upper(), title=args.title,
+                         flag2_passability=args.candidate_flag2_passable)
     except (PorMapError, PorSourceError) as exc:
         print("por_map: error: %s" % exc, file=sys.stderr)
         return 2

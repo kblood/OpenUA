@@ -52706,6 +52706,9 @@ static void l45f0_menu(short variant)
 	                     ua_strs_at(variant ? 0x6d06 : 0x6cfc)
 	                     /* "Blocked:" */,
 	                     g_a5_long(-13640), (short)0, (short)0) & 0xff);
+#ifdef FRUA_DOOR_DIAG
+	dbg_file_num("DOOR menu pick=", (long)pick);
+#endif
 	switch (pick) {         /* JT[3] @0x469e / @0x4780 */
 	case 0:
 		g_a5_byte(-22308) = (unsigned char)l326e();
@@ -52724,6 +52727,9 @@ static void l45f0_menu(short variant)
 	default:
 		break;
 	}
+#ifdef FRUA_DOOR_DIAG
+	dbg_file_num("DOOR menu allowed=", (long)g_a5_byte(-22308));
+#endif
 }
 
 /* jt955's case-4 decision core (asm 0x457e..0x47c2): the JT[3] switch
@@ -52782,10 +52788,35 @@ static int play_forward_allowed(void)
 	                (short)(signed char)g_a5_byte(-12287),
 	                (short)(unsigned char)g_a5_byte(-12286));
 
+#ifdef FRUA_DOOR_DIAG
+	dbg_file_num("DOOR forward row=", (long)(signed char)g_a5_byte(-12288));
+	dbg_file_num("DOOR forward col=", (long)(signed char)g_a5_byte(-12287));
+	dbg_file_num("DOOR forward facing=", (long)(unsigned char)g_a5_byte(-12286));
+	dbg_file_num("DOOR forward edge=", (long)t);
+#endif
+#if defined(FRUA_DOOR_DIAG) && defined(FRUA_DOOR_STR25)
+	/* TEST-ONLY door fixture (never in a normal build): give the first party
+	 * member Strength 25. l326e's FORCE check then passes for any wall that is
+	 * not passability 15 (l326e refuses 15 outright). */
+	{
+		long m = g_a5_long(-27928);
+
+		if (m != 0)
+			((unsigned char *)(uintptr_t)m)[113] = 25;
+	}
+#endif
+
 	g_a5_byte(-22308) = 0;
 	jt955_dungeon_decide();
 	if (t == 2 || t == 3 || t == 4 || t == 5 || t == 15)
 		g_event_modal_shown = 1;        /* a Blocked: menu ran */
+#ifdef FRUA_DOOR_DIAG
+	dbg_file_num("DOOR forward allowed=", (long)g_a5_byte(-22308));
+	/* Stored passability of the west edge of (14,10) (row 10, col 14, W=6),
+	 * read back on every forward decision so a later call shows whether the
+	 * decision persisted. */
+	dbg_file_num("DOOR stored edge 14,10 W=", (long)jt210((short)10, (short)14, (short)6));
+#endif
 	return g_a5_byte(-22308) != 0;
 }
 
