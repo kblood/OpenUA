@@ -89,9 +89,17 @@ A new `evidence*` folder was kept for each.
 | 9 | `evidence-attempt9-overland-extra-up/` | Same sequence and extra Up, with `FRUA_CELLSCAN` and `FRUA_OVDIAG` | `jt955` candidate `(15,3)`, in bounds, blocked result 14; no landing. |
 
 The earlier flag-2 door run sent Up, Return and Up, and it reached the dungeon walk. In attempts
-2–5 here, the first Up produced no walk render, and neither did Return on its own. That walk
-marker is dungeon-specific, so its absence did not assess the level-2 overland loop. Hatari's screenshot shows the
-pre-walk screen: a scene picture above an empty text panel (what the game is waiting for is not identified). Which key advances that screen was
+2–5 here, the first Up produced no walk render, and neither did Return on its own. Source inspection
+explains why that marker was the wrong test for this design: `jt948` dispatches on the loaded
+entry level, takes levels below 5 through the overland command path (`jt953`), and takes levels
+5 and above through the dungeon path (`jt240`/`l63c0`) after setting the dungeon mode byte. This
+design's `GAME001.DAT` entry-level byte is 2, and the recorded build did not define the paired
+`FRUA_ENTRY_LEVEL`/`FRUA_ENTRY_COL` override. Its attempts therefore ran the overland branch.
+The `dbg_dump_view` marker is from dungeon rendering; its absence says nothing about overland
+movement. The `DOOR forward` diagnostic is in `play_forward_allowed`, whose only caller is the
+dungeon `jt297` path, so its absence is likewise not evidence about overland movement. The
+screenshots' lake-and-town picture is consistent with the overland screen, though
+the exact UI state waiting for input is still unidentified. Which key advances that screen was
 not determined within the key budget. Up is the same scan code as the forward key, so it could
 not be used for that purpose here. A mouse event (Hatari exposes `hatari-event` clicks) was not
 tried.
