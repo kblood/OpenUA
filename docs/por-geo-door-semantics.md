@@ -44,6 +44,39 @@ It does not prove that every GEO byte with value 2 feeds this edge reader: the
 separate static probe still has not bound its plane-3 buffer to the selected
 GEO block. It also does not say anything about flag 3.
 
+**Exact capture facts** (as recorded in the GoldBox note; not re-run here):
+
+- Movement inputs `UP, RIGHT, UP, UP, RIGHT, UP`, then `B` at the lock prompt.
+  Before the final `UP` the party is at `(14,10)` facing west (direction 6),
+  wall 10, raw descriptor `0x00`, ECL cursor `0x9975`. The first frame shows
+  `LOCKED. BASH PICK EXIT`.
+- After `B` (Bash succeeded, no memory write) the party is at `(13,10)` facing
+  west, wall 0, raw descriptor `0x83`, ECL cursor `0x9FD5`. The original
+  executable moved the party and persisted the edge.
+- In a separate clean run, `P` (Pick) was consumed and failed its random check;
+  the party stayed at `(14,10)`. A stalled automation run produced no gameplay
+  artifacts and is not negative evidence.
+- The GoldBox note names the proof directory
+  `build/dosbox-x-pool-route-hostregs-20260722-c`. That tree lives in the
+  read-only GoldBox checkout and was not inspected for this note.
+- The same note cites the original Gen1 movement contract (`ovr015.locked_door`)
+  as reading flag 2 as a Bash/Pick/Knock prompt. That is a static citation from
+  the GoldBox note, not re-read here. It does not cover flag 3 or the reader
+  binding.
+
+**Static cross-check (2026-11-18, read-only).** `GEO2.DAX` matches the pinned
+sha256 (`2035246014…d595`). At cell `(14,10)`, the four raw plane bytes are
+`[0x00, 0x7A, 0x00, 0x80]`; cell `(13,10)` has descriptor `0x83`. Under the
+converter's Gen1 compass-label model, the `0x80` byte decodes as west wall
+slot 10 / door value 2. The PoR plane-3 static probe independently confirms
+that direction code 6 selects bits 6-7, but does not establish that code 6
+means west. The native runtime note reports west/locked at `(14,10)`, so the
+raw-byte and runtime observations are consistent with the model; they do not
+prove that the runtime reader reads this GEO buffer. See
+[`por-plane3-field-layout-probe.md`](por-plane3-field-layout-probe.md) for the
+direction-label evidence boundary. This is one cross-check, not a general
+flag-2 rule.
+
 ## Pins
 
 Retail files were opened read-only from `G:\Games\Pool of Radiance\POOLRAD`.
@@ -108,11 +141,13 @@ value passes or blocks the party, nor which value means "locked".
 a runtime capture). It reports four routines that touch the plane-3 field:
 
 - `GAME.OVR:0x166CB` (8 sites) reads and writes `+0x300` (plane 3) with masks
-  `0x3F`, `0xCF`, `0xF3`, `0xFC`. Those clear one 2-bit field each: W, S, E,
-  N. It has no gate.
+  `0x3F`, `0xCF`, `0xF3`, `0xFC`. Those clear the 2-bit fields at bits 6-7,
+  4-5, 2-3 and 0-1 respectively. The matching direction arguments are 6, 4,
+  2 and 0; their compass labels are not established by this probe. It has no
+  gate.
 - `GAME.OVR:0x167D4` (8 sites) reads and writes `+0x300`, then ORs
-  `0x40`, `0x10`, `0x04`, `0x01`. That sets a field to `01`. It is gated on
-  `0 <= X,Y <= 15`.
+  `0x40`, `0x10`, `0x04`, `0x01`, setting the corresponding fields for
+  direction arguments 6, 4, 2 and 0 to `01`. It is gated on `0 <= X,Y <= 15`.
 - `GAME.OVR:0x2EC47` (4 sites) reads plane 3 at `+0x300`, gated on Y.
 
 The same doc says the fill routine `0x2F9BE` is where the buffer is built, and
@@ -159,7 +194,7 @@ joined to a loaded GEO block's plane 3. Therefore the branch establishes
 `GEO door flag 1 -> passable`. Which events set or clear plane-3 fields also
 remains unknown.
 
-## Evidence class 3: OpenUA source-level movement behavior (not runtime-tested here)
+## Evidence class 3: OpenUA source-level movement behavior
 
 `tools/dsn.py` (wall byte comment) and `src/engine/boot.c` define the high
 nibble (passability). The menu-less `play_can_pass` used for strafe/backstep
@@ -179,13 +214,62 @@ refuses menu-coded nibbles; the forward-play path calls
 | default | refuse |
 
 The low nibble is the wall texture group; it plays no part in passability.
-OpenUA's current forward movement therefore has an interaction path for the
-converter's `0xF0 | slot` edge. It does not yet persist a successfully opened
-edge as the PoR DOS trace does; the current Bash path only reports success to
-the movement gate. The other movement keys use the menu-less gate and refuse
-these menu-coded edges.
+The test-only runtime cross-check below confirms that an authored edge byte
+with high nibble 15 reaches this forward interaction path. OpenUA does not yet
+persist a successfully opened edge as the PoR DOS trace does; the current Bash
+path only reports success to the movement gate. The other movement keys use
+the menu-less gate and refuse these menu-coded edges.
 
-## Evidence class 4: other-title hypothesis (NOT PoR evidence)
+## Evidence class 4: OpenUA test-only runtime cross-check (2026-11-18)
+
+This is a host-built OpenUA test design, not a converted campaign module. The
+test used retail `GEO2.DAX` block 20 as input and wrote only under
+`data/work/por-flag2-openua-runtime-20261118-*`. The design starts at
+`(col=14,row=10)` with the engine's west code 6. Its target cell stores N/E/S/W
+bytes `00 00 E7 FA`; byte 3 is the source west wall slot 10, door flag 2
+mapped to `0xFA`. The `.DSN` is `POR2NEW.DSN`, area 20, with no campaign
+content.
+
+The isolated Hatari 2.3.1 / STE / 14 MB / EmuTOS run used a clone build with
+`FRUA_AREATEST`, `FRUA_SKIP_ENTRY_EVENTS`, `FRUA_GEO_SWEEPTEST`, and
+`FRUA_DOOR_DIAG`. Hatari loaded GEO020 (`16x16`, 256 cells), reported one map
+loaded / 28 absent / 0 failed in the sweep, and continued to `jt948`. After a
+FIFO Up event, the fresh `DBG.LOG` recorded:
+
+```text
+DOOR jt297 key=264
+DOOR jt297 fp3=1
+DOOR jt297 editor=0
+DOOR forward row=10
+DOOR forward col=14
+DOOR forward facing=6
+DOOR forward edge=15
+```
+
+This is runtime evidence that, for this test fixture, the corrected facing and
+edge ordering make the engine read the converted west edge as passability 15.
+It resolves the fixture mismatch seen in earlier runs, where a requested
+`west` entry was encoded as facing 3 and the forward gate read another edge.
+The absolute edge order in the converter is N/E/S/W to match `jt210`'s
+`(dir & 6) >> 1` selector and `jt297`'s cardinal direction codes.
+
+A Return event produced `DOOR menu pick=0`, `DOOR menu edge=15`,
+`DOOR menu allowed=0`, and `DOOR forward allowed=0`. A second Up/Return attempt
+also selected item 0 and remained blocked. In this source path item 0 runs the
+force/Bash check. The bounded test party did not succeed. The screen capture
+shows the first-person view but does not show readable `Blocked:` menu text.
+This check confirms the selected edge and the blocked forward gate; it does
+not establish that the menu is visibly presented, that Pick is selectable in
+this harness, or that a successful Bash crosses and persists the edge. The
+original PoR DOS run still provides the separate observation of a failed Pick
+followed by a successful Bash.
+
+The ignored artifacts and trace are under
+`data/work/por-flag2-openua-runtime-20261118-o/` (`DBG.LOG`; screenshots in
+`shots-q/`). The retail install was read-only. No GoldBox files were changed
+or used as evidence for OpenUA behavior.
+
+## Evidence class 5: other-title hypothesis (NOT PoR evidence)
 
 `C:\Modding\GoldBox` (read-only reference) has a copy of `find_geo_path.py`
 under `build/cok-recomp/` with a Gen1 door rule: flag 1 passes automatically, flag 2 opens a bash/pick/knock prompt,
@@ -206,19 +290,35 @@ but is a different title and is not used to decide anything here.
 | door 2 -> interaction-gated | `0xF0\|S` | 128 wall edges; one PoR DOS route at GEO2 block 20 shows LOCKED/BASH/PICK and successful Bash crossing | forward movement offers the Blocked menu and permits a successful force/Bash action | supported for one original-game route; general flag binding and persistent-open parity remain unproven |
 | door 3 -> unresolved | `0xF0\|S` | 14 wall edges; no PoR runtime observation | same OpenUA Blocked menu as door 2 | unresolved; Bash/Knock-only comes from CoK research, not PoR |
 
-The converter preserves the existing byte mapping for now. It distinguishes
-flag 2 and flag 3 in normalized rule counts and evidence labels, although both
-currently encode as passability 15. A future flag-3 mapping change needs
+The converter preserves the per-edge passability byte mapping: flag 2 and flag
+3 both encode as passability 15. It now stores N/E/S/W in the order selected
+by the OpenUA engine and writes cardinal entry headings with the engine codes.
+This corrects the previous byte positions and heading values, which could send
+the movement check to the wrong edge. Door flags remain distinct in normalized
+rule counts and evidence labels. A future flag-3 mapping change needs
 PoR-specific evidence; the CoK distinction must not be promoted.
 
 ## Decision
 
-`tools/por_map.py` now reports a separate flag-2 `locked` label and flag-3
-`door3-unresolved` label while preserving the emitted bytes. The overall
-`por_door_rule_proven` flag remains false because this one runtime route does
-not bind all GEO flag-2 fields to the runtime reader or establish the other
-flags. Tests assert both the unchanged wall byte and the distinct evidence
-labels. Census, caller and branch tests remain in
+`tools/por_map.py` reports a separate flag-2 `locked` rule and flag-3
+`door3-unresolved` rule. The per-edge values remain `0xF0 | slot` for both
+flags; the runtime-verified edge order and entry heading place those values on
+the edge selected by OpenUA. Each rule carries
+provenance in `RULE_EVIDENCE`, which is written to `por_map.json` as
+`edge_mapping_evidence.rules` and shown as a status tag in the report:
+
+- `locked`: basis `por-runtime-single-route`, status `supported-single-route`.
+  Its PoR runtime field records the one GEO2 block 20 route.
+- `door3-unresolved`: basis `other-title-hypothesis (CoK)`, status
+  `provisional`, no PoR runtime observation.
+- `open`, `solid`, `auto-door`: basis `assumption`, status
+  `assumption-unverified`.
+
+Every rule has `geo_reader_binding: unproven` and `general_rule_proven: false`.
+The overall `por_door_rule_proven` flag remains false because this one runtime
+route does not bind all GEO flag-2 fields to the runtime reader or establish
+the other flags. Tests assert the unchanged wall byte for both door 2 and door
+3, the distinct rule labels, and the separate normalized counts. Census, caller and branch tests remain in
 `tests/test_por_geo_door_census.py`, `tests/test_por_door_caller_probe.py`, and
 `tests/test_por_door_reader_branch_probe.py`.
 
@@ -226,14 +326,23 @@ labels. Census, caller and branch tests remain in
 
 - Census counts stored bytes. It says nothing about passability.
 - Shared-edge agreement measures consistency only.
-- The reader identity and GEO-to-buffer source link are not established. The
-  GoldBox PoR DOS runtime observation is independent of that static link and
-  establishes only its recorded route. OpenUA has not yet been runtime-tested
-  against that route. The current interactive capture path is blocked by copy
-  protection (`docs/por-wall-runtime-capture-attempt.md`).
+- The PoR DOS reader identity and GEO-to-buffer source link are not established.
+  The GoldBox PoR DOS runtime observation is independent of that static link
+  and establishes only its recorded route. OpenUA's test-only runtime check
+  confirms the selected edge byte and blocked gate, but not visible menu text,
+  successful Bash, persistence, or full-game behavior. The original-game
+  interactive capture path is blocked by copy protection
+  (`docs/por-wall-runtime-capture-attempt.md`).
 - The `slot S` texture group is still unverified against WALLDEF.
 - CoK/COAB semantics are hypothesis only. The GoldBox repository's PoR DOS
   runtime trace is cited as PoR-specific evidence and was read-only.
+- The flag-2 route is one native route with one successful Bash. A general
+  "flag 2 needs Bash" rule is not established by it, and it says nothing about
+  the other flag-2 cells in the 29 blocks.
+- The static cross-check confirms stored bytes at two cells. It does not
+  confirm the runtime reader's input or its GEO-buffer source.
+- Door 3 has no PoR runtime evidence here. Its Bash/Knock meaning comes from
+  the CoK note and stays a separate hypothesis.
 
 ## Next discriminating observation
 

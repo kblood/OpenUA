@@ -4,10 +4,11 @@ Fixture contract (synthetic; no retail data is needed or used):
   * DAX container: 2-byte TOC size, 9-byte TOC entries, contiguous data chain
     from offset 0 closing exactly at EOF, signed-byte RLE blocks (the layout in
     GoldBox docs/dax-format.md). `make_dax` below writes that layout.
-  * Gen1 GEO block: 1026 bytes = uint16 LE 1024, then four 256-byte planes,
+  * Gen1-model GEO block: 1026 bytes = uint16 LE 1024, then four 256-byte planes,
     cell index y*16+x. Plane 0 = N<<4|E, plane 1 = S<<4|W, plane 2 =
-    descriptor, plane 3 = door flags (N 0-1, E 2-3, S 4-5, W 6-7). `geo_raw`
-    below writes that layout.
+    descriptor, plane 3 = door flags. Compass labels and packed-field order
+    follow the Gen1 decoder model; PoR does not establish the plane-3 compass
+    labels. `geo_raw` below writes this test contract.
 These pin OUR decoder to the documented contract. They do not prove that a
 retail PoR block decodes this way; that remains open (see docs/por-converter.md).
 """
@@ -219,7 +220,7 @@ def test_geo_plane_layout_at_known_cell():
     raw[2 + i] = (7 << 4) | 4                  # plane 0: N=7, E=4
     raw[2 + 256 + i] = (9 << 4) | 2            # plane 1: S=9, W=2
     raw[2 + 512 + i] = 0x8E                    # plane 2: descriptor
-    raw[2 + 768 + i] = 0b10_01_11_00           # plane 3: W=2 S=1 E=3 N=0
+    raw[2 + 768 + i] = 0b10_01_11_00           # Gen1 model: W=2 S=1 E=3 N=0
     cells = pm.decode_gen1_geo(bytes(raw))
     c = cells[i]
     assert (c["x"], c["y"], c["index"]) == (3, 5, 83)
@@ -262,34 +263,77 @@ def test_door_two_and_three_keep_same_byte_but_distinct_evidence_labels():
     assert "GEO2.DAX block 20" in evidence["por_runtime_observation"]["case"]
 
 
+def test_rule_evidence_separates_door_two_runtime_route_from_door_three_hypothesis():
+    rules = pm.RULE_EVIDENCE
+    assert set(rules) == set(pm.MAP_RULES)
+    # Only the flag-2 rule has a PoR runtime observation, and it is one route.
+    assert rules["locked"]["basis"] == "por-runtime-single-route"
+    assert rules["locked"]["status"] == "supported-single-route"
+    assert "(14,10)" in rules["locked"]["por_runtime"]
+    assert rules["door3-unresolved"]["por_runtime"] == "none"
+    assert rules["door3-unresolved"]["status"] == "provisional"
+    assert "CoK" in rules["door3-unresolved"]["basis"]
+    # Nothing has a proven GEO-reader binding or a general rule.
+    for name, entry in rules.items():
+        assert entry["geo_reader_binding"] == "unproven", name
+        assert entry["general_rule_proven"] is False, name
+    # The byte-level rule text must not present flag 2 as a general rule.
+    assert "general flag-2 rule unproven" in pm.MAP_RULES["locked"]
+    assert "CoK" in pm.MAP_RULES["door3-unresolved"]
+
+
+def test_door_two_and_three_split_in_normalized_counts_with_identical_wall_bytes():
+    # Two edges with the same slot 10 and different door flags.
+    cells = pm.decode_gen1_geo(geo_raw(lambda x, y: (
+        (0, 0), (10, 2) if (x, y) == (5, 5) else (
+            (10, 3) if (x, y) == (6, 5) else (0, 0)), (0, 0), (0, 0), 0)))
+    norm = pm.build_normalized({"file": "synthetic"}, cells, [], None, {})
+    counts = norm["diagnostics"]["edge_rules"]
+    assert counts["locked"] == 1 and counts["door3-unresolved"] == 1
+    # Both edges emit the same wall byte. Check the byte multiset so the test
+    # does not depend on the writer's stored edge order.
+    g = pm.build_openua_geo(cells, None)
+    for xy in ((5, 5), (6, 5)):
+        walls = sorted(list(g.cell(*xy)[:4]))
+        assert walls == [0, 0, 0, 0xFA], (xy, walls)
+    assert norm["edge_mapping_evidence"]["rules"]["locked"]["status"] == \
+        "supported-single-route"
+
+
 # ---- OpenUA geo: coordinate and wall mapping -------------------------------
 
+def test_facing_names_use_engine_cardinal_codes():
+    # The engine stores 3-bit compass headings: 0 normalizes to north=8,
+    # and cardinal directions are separated by two codes.
+    assert pm.FACINGS == {"north": 0, "east": 2, "south": 4, "west": 6}
+
+
 def test_openua_geo_coordinates_are_not_transposed():
-    """Gen1 (x,y) -> OpenUA cell(col=x, row=y); FRUA stores edges W,S,E,N."""
+    """Gen1-model (x,y) -> OpenUA cell(col=x, row=y); output edge slots use the OpenUA order."""
     cells = pm.decode_gen1_geo(geo_raw(lambda x, y: (
         (2, 0), (4, 0), (6, 0), (8, 0), 0) if (x, y) == (3, 5) else (
         (0, 0), (0, 0), (0, 0), (0, 0), 0)))
-    g = pm.build_openua_geo(cells, (3, 5, 1))
+    g = pm.build_openua_geo(cells, (3, 5, pm.FACINGS["east"]))
     assert g.width == 16 and g.height == 16
     cell = g.cell(3, 5)
-    assert list(cell[:4]) == [0xE8, 0xE6, 0xE4, 0xE2]
+    assert list(cell[:4]) == [0xE2, 0xE4, 0xE6, 0xE8]
     # the transposed cell (5,3) and its neighbours stay open
     assert list(g.cell(5, 3)[:4]) == [0, 0, 0, 0]
-    assert g.entry_point(0) == (5, 3, 1)        # (row, col, facing)
+    assert g.entry_point(0) == (5, 3, 2)        # (row, col, engine facing)
     assert Geo.parse(g.build()).cell(3, 5) == cell
     assert bytes(g.hdr[4:14]) == ART_BLOCK
 
 
 def test_openua_geo_builds_round_trip_and_fixed_size():
     cells = pm.decode_gen1_geo(geo_raw(_fixture_cells))
-    raw = pm.build_openua_geo(cells, (3, 5, 1)).build()
+    raw = pm.build_openua_geo(cells, (3, 5, pm.FACINGS["east"])).build()
     assert len(raw) == 12962
     back = Geo.parse(raw)
-    assert list(back.cell(7, 2)[:4]) == [0, 0, 0, 0x19]     # N slot 9 door 1 -> secret-door passage
-    assert list(back.cell(10, 10)[:4]) == [0, 0xF6, 0, 0]   # S slot 6 door 2 -> blocked (bash/knock)
+    assert list(back.cell(7, 2)[:4]) == [0x19, 0, 0, 0]     # N slot 9 door 1 -> secret-door passage
+    assert list(back.cell(10, 10)[:4]) == [0, 0, 0xF6, 0]   # S slot 6 door 2 -> blocked (bash/knock)
     assert list(back.cell(1, 5)[:4]) == [0, 0, 0, 0]        # descriptor 0x8E is not mapped
     assert back.cell_special(1, 5) == 0
-    assert list(back.cell(0, 5)[:4]) == [0xE3, 0, 0, 0]     # W perimeter: slot 3 solid
+    assert list(back.cell(0, 5)[:4]) == [0, 0, 0, 0xE3]     # W perimeter: slot 3 solid
 
 
 # ---- diagnostics -------------------------------------------------------------
@@ -352,7 +396,12 @@ def test_end_to_end_emits_map_only_design(tmp_path, capsys):
     import json
     norm = json.loads((out / "por_map.json").read_text(encoding="utf-8"))
     assert norm["status"] == "map-only" and norm["playable"] is False
-    assert norm["edge_mapping_evidence"] == {
+    evidence = dict(norm["edge_mapping_evidence"])
+    rules = evidence.pop("rules")
+    assert rules["locked"]["status"] == "supported-single-route"
+    assert rules["door3-unresolved"]["status"] == "provisional"
+    assert all(r["general_rule_proven"] is False for r in rules.values())
+    assert evidence == {
         "status": "single-por-runtime-case; general-mapping-unverified",
         "source_boundary": "PoR DOS runtime supports interaction-gated crossing for one flag-2 edge; GEO field binding and general semantics remain open; flag 3 is CoK-only hypothesis",
         "por_door_rule_proven": False,
@@ -381,7 +430,7 @@ def test_end_to_end_emits_map_only_design(tmp_path, capsys):
     assert game[48] == 5 and game[49] == 1           # start area, entry 1
     geo = Geo.parse((dsn / "GEO005.DAT").read_bytes())
     assert geo.width == 16 and geo.height == 16
-    assert geo.entry_point(0) == (5, 3, 1)           # row, col, facing east
+    assert geo.entry_point(0) == (5, 3, 2)           # row, col, engine east code
 
 
 def test_end_to_end_is_deterministic(tmp_path):

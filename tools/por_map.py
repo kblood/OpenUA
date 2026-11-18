@@ -69,7 +69,11 @@ DAX_TOC_ENTRY = 9                        # u8 id, u32 offset, u16 raw, u16 comp
 
 # Edge order is the OpenUA order (dsn.py / geo.py): 0=N 1=E 2=S 3=W.
 EDGES = ("N", "E", "S", "W")
-FACINGS = {"north": 0, "east": 1, "south": 2, "west": 3}
+# GEO entry facings are the engine's 3-bit compass direction codes. The
+# runtime normalizes 0 to 8; the cardinal headings are therefore N=0, E=2,
+# S=4, W=6 (odd values are diagonals). See jt297's direction-table comments
+# and jt210's `(dir & 6) >> 1` edge selection in src/engine/boot.c.
+FACINGS = {"north": 0, "east": 2, "south": 4, "west": 6}
 DSN_NAME_RE = re.compile(r"[A-Z0-9_]{1,8}")
 DEFAULT_AREA = 5     # same start-area convention as dsn.demo_design()
 DEFAULT_NAME = "PORMAP"
@@ -186,12 +190,14 @@ def decode_gen1_geo(raw: bytes) -> list[dict]:
     """Decode a 1026-byte Gen1 GEO block into 256 cell records, row-major
     (index = y * 16 + x, y 0 = north).
 
-    Layout (the Gen1 model used by tools/find_geo_path.py):
+    Layout (the Gen1 model used by tools/find_geo_path.py; not established
+    as PoR compass semantics):
       raw[0:2]      uint16 LE data size, must be 1024
-      plane 0       N in the high nibble, E in the low nibble
-      plane 1       S in the high nibble, W in the low nibble
+      plane 0       Gen1 model: N in high nibble, E in low nibble
+      plane 1       Gen1 model: S in high nibble, W in low nibble
       plane 2       per-cell descriptor (event/backdrop byte; kept raw)
-      plane 3       door flags, 2 bits per edge: N bits 0-1, E 2-3, S 4-5, W 6-7
+      plane 3       Gen1 model: four 2-bit edge fields; PoR code confirms
+                    direction-code bit pairs but not their compass labels
     Each wall is (slot 0..15, door 0..3). Slot 0 means no wall graphic.
     """
     if len(raw) != GEO_BLOCK_RAW:
@@ -207,6 +213,9 @@ def decode_gen1_geo(raw: bytes) -> list[dict]:
         for x in range(GRID_W):
             i = y * GRID_W + x
             p0, p1, p2, p3 = planes[0][i], planes[1][i], planes[2][i], planes[3][i]
+            # Compass labels and packed-field order follow the Gen1 decoder
+            # model. PoR's static writer/reader probe establishes direction
+            # codes 0/2/4/6 -> pairs 0/1/2/3, but does not name those headings.
             edges = {
                 "N": (p0 >> 4, p3 & 3),
                 "E": (p0 & 15, (p3 >> 2) & 3),
@@ -232,8 +241,33 @@ MAP_RULES = {
     "open": "ASSUMPTION: slot 0: no wall, passable whatever the door byte says",
     "solid": "ASSUMPTION: wall, no door flag: solid wall (14)",
     "auto-door": "ASSUMPTION: wall + door 1 maps to passable secret-door (1)",
-    "locked": "PoR runtime example: wall + flag 2 opens with successful Bash; encoded as Blocked-menu edge (15)",
-    "door3-unresolved": "ASSUMPTION: wall + door 3 also uses Blocked-menu edge (15); CoK-only semantics, not PoR-proven",
+    "locked": "one PoR DOS runtime route: wall + flag 2 stopped the party until a successful Bash; encoded as Blocked-menu edge (15); general flag-2 rule unproven",
+    "door3-unresolved": "no PoR runtime observation: wall + door 3 is a CoK/other-title Bash/Knock hypothesis; encoded as Blocked-menu edge (15) provisionally",
+}
+
+# Per-rule provenance, emitted with the normalized map. `basis` is where the
+# rule's meaning comes from; `por_runtime` is what the PoR DOS runtime showed.
+# Only `locked` has a PoR runtime observation, and that is one route. No rule
+# has its GEO-reader binding proven, and none sets por_door_rule_proven.
+RULE_EVIDENCE = {
+    "open": {"basis": "assumption", "por_runtime": "none",
+             "status": "assumption-unverified",
+             "geo_reader_binding": "unproven", "general_rule_proven": False},
+    "solid": {"basis": "assumption", "por_runtime": "none",
+              "status": "assumption-unverified",
+              "geo_reader_binding": "unproven", "general_rule_proven": False},
+    "auto-door": {"basis": "assumption", "por_runtime": "none",
+                  "status": "assumption-unverified",
+                  "geo_reader_binding": "unproven", "general_rule_proven": False},
+    "locked": {"basis": "por-runtime-single-route",
+               "por_runtime": ("GEO2 block 20 (14,10) west, flag 2: LOCKED. BASH PICK "
+                               "EXIT; one Pick failed; Bash succeeded; party moved to (13,10)"),
+               "status": "supported-single-route",
+               "geo_reader_binding": "unproven", "general_rule_proven": False},
+    "door3-unresolved": {"basis": "other-title-hypothesis (CoK)",
+                         "por_runtime": "none",
+                         "status": "provisional",
+                         "geo_reader_binding": "unproven", "general_rule_proven": False},
 }
 
 EDGE_MAPPING_EVIDENCE = {
@@ -247,6 +281,7 @@ EDGE_MAPPING_EVIDENCE = {
         "outcome": "LOCKED. BASH PICK EXIT; Pick failed in one attempt; Bash succeeded, party crossed to (13,10), and the original persisted the opened edge",
         "scope": "one native route observation; not a full proof that every stored flag-2 byte feeds this runtime edge reader",
     },
+    "rules": RULE_EVIDENCE,
 }
 
 
@@ -344,14 +379,14 @@ def parse_expectation(text: str) -> dict:
 def build_openua_geo(cells: list[dict], entry: Optional[tuple[int, int, int]]) -> Geo:
     """A 16 x 16 OpenUA area built with OpenUA's own geo.py. Cell (x,y) is
     addressed as cell(col=x, row=y); the wall bytes come from map_edge. Source
-    edges are named N/E/S/W, but FRUA stores its four wall bytes W/S/E/N, so
-    reorder them at this boundary. The plane-2 descriptor and zone bits are
-    left at zero (not mapped)."""
+    edges and OpenUA's runtime selector are ordered N/E/S/W, so write them in
+    that order. The plane-2 descriptor and zone bits are left at zero (not
+    mapped)."""
     g = Geo.blank(GRID_W, GRID_H)
     g.hdr[4:14] = ART_BLOCK          # the known-good art binding dsn.py uses
     for c in cells:
         walls = tuple(map_edge(*c["edges"][k])[0]
-                      for k in ("W", "S", "E", "N"))
+                      for k in ("N", "E", "S", "W"))
         g.set_cell(c["x"], c["y"], walls=walls)
     if entry is not None:
         ex, ey, facing = entry
@@ -440,7 +475,8 @@ def render_report(norm: dict, warnings: list[str], unsupported: list[str]) -> st
         "",
     ]
     for k, text in MAP_RULES.items():
-        lines.append("- **%s**: %s (%d edges)" % (k, text, d["edge_rules"][k]))
+        lines.append("- **%s** [%s]: %s (%d edges)"
+                     % (k, RULE_EVIDENCE[k]["status"], text, d["edge_rules"][k]))
     lines += [
         "",
         "## Diagnostics",
@@ -493,7 +529,7 @@ UNSUPPORTED_MAP_ONLY = [
     "plane 2 descriptor (search/event dispatch key, backdrop/zone): kept in por_map.json only",
     "zones and cell flags: zero",
     "wall art: HDR art block copied from OpenUA dsn.py (known-good), not PoR WALLDEF",
-    "door semantics: flag 2 has one PoR DOS locked-door/Bash runtime example but GEO-reader binding and general rule remain unproven; flag 3 remains a CoK-derived hypothesis; both currently encode to the OpenUA Blocked-menu edge",
+    "door semantics: flag 2 has one PoR DOS runtime route (Bash opened it), but the GEO-reader binding and the general flag-2 rule are unproven; flag 3 is a CoK/other-title hypothesis; both currently encode to the OpenUA Blocked-menu edge (15)",
     "Gen1 wall slot used as the OpenUA texture group unchanged (unverified)",
     "party and economy: GAME001 defaults (XP, gold) from dsn.Design, not PoR",
     "campaign: one area only, no transitions to other areas",

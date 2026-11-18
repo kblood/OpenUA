@@ -110,17 +110,18 @@ cells past `width×height` are unused padding).
 
 | byte | meaning |
 |---|---|
-| 0..3 | the four **edge walls**, in the order **W, S, E, N** (direction = `edge/2`, i.e. `edge` 0/2/4/6). High nibble = wall id (0..15, `jt212`); low nibble = wall attribute (door/secret, read `& 15`). |
+| 0..3 | the four **edge walls**, in the order **N, E, S, W** (direction = `edge/2`, i.e. `edge` 0/2/4/6). High nibble = wall id (0..15, `jt212`); low nibble = wall attribute (door/secret, read `& 15`). |
 | 4 | **special** = event index + 1 into ENCR (0 = no event on this cell); `jt201` returns it |
 | 5 | **zone** in bits 2..4 (`(byte>>2) & 7`, `jt197`) + misc flags in the other bits |
 
-The **W, S, E, N** order was settled by shared-edge agreement, not by reading
-the engine: a wall between two cells is stored on both sides, so pairing each
-cell's edge with its neighbour's opposite edge has to agree everywhere. Across
-GEO005's 342 vertical edges, `[W,S,E,N]` gives **0** disagreements and the N/S
-swap gives **111**; the horizontal control (`E` against the neighbour's `W`)
-gives 2, which is the one-sided-door rate. Guessing N/E/S/W here costs real
-time — it sends a walk route into a wall that the data says is open.
+The absolute order is read from the OpenUA runtime selector: `jt210` chooses
+`(dir & 6) >> 1`, and the first-person direction codes in `jt297` map north,
+east, south and west to edge slots 0, 1, 2 and 3. A Hatari trace of the
+test-only PoR flag-2 design confirmed the west case: with facing code 6, the
+engine read slot 3; after the converter wrote W at slot 3, it returned the
+expected Blocked-menu passability 15. Shared-edge agreement alone does not
+identify an absolute compass order; the earlier W/S/E/N conclusion from that
+test was a false inference from pairwise agreement counts.
 
 ## ENCR — the event table (A5 `-13038`)
 
@@ -415,7 +416,7 @@ the party and event text.
 from geo import Geo
 g = Geo.blank(width=8, height=8)      # zeroed HDR/MAP/ENCR/STRG, version 106
 g.set_entry_point(0, row=1, col=1, facing=0)
-g.set_cell(col=1, row=1, walls=(0xF0, 0, 0, 0))   # a solid wall on edge 0
+g.set_cell(col=1, row=1, walls=(0xF0, 0, 0, 0))   # a solid wall on the north edge
 #   NB 0xF0, not 0x10: the byte is `id << 4 | attribute`, and wall id 1 is the
 #   SECRET DOOR type — it renders, but the engine announces it and the party
 #   walks through. Real areas use id 15 (0xF0) for ordinary stone.

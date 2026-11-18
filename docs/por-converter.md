@@ -607,16 +607,27 @@ This validates DAX extraction, block size and the cited plane-2 coordinates on
 these files. Wall semantics, artwork mapping and in-engine load/walk behavior
 remain unverified.
 
-### Plane layout (implemented in `decode_gen1_geo`)
+### Plane layout (decoder model implemented in `decode_gen1_geo`)
+
+This is the Gen1 layout model used by the converter, not a complete PoR
+semantic finding. PoR's static plane-3 probe confirms that direction codes
+0/2/4/6 select the successive 2-bit pairs, but does not establish compass
+labels for those codes. The runtime observation for one door route is cited
+separately below; it does not bind the native reader to these decoded fields.
 
 ```
 raw[0:2]        uint16 LE = 1024 (size field; checked)
-raw[2:258]      plane 0: N = high nibble, E = low nibble
-raw[258:514]    plane 1: S = high nibble, W = low nibble
+raw[2:258]      plane 0: Gen1 model: N = high nibble, E = low nibble
+raw[258:514]    plane 1: Gen1 model: S = high nibble, W = low nibble
 raw[514:770]    plane 2: per-cell descriptor (event/backdrop byte; kept raw)
-raw[770:1026]   plane 3: door flags: N bits 0-1, E 2-3, S 4-5, W 6-7
+raw[770:1026]   plane 3: Gen1 model: N bits 0-1, E 2-3, S 4-5, W 6-7
 cell index = y * 16 + x   (row 0 = north)
 ```
+
+The plane-3 probe's PoR-specific result is the numeric pairing
+`direction 0 -> bits 0-1`, `2 -> bits 2-3`, `4 -> bits 4-5`, and
+`6 -> bits 6-7`. Its compass names above remain the Gen1 model; see
+[`por-plane3-field-layout-probe.md`](por-plane3-field-layout-probe.md).
 
 Each wall is `(slot 0..15, door 0..3)`. Slot 0 means no wall graphic.
 
@@ -642,22 +653,35 @@ case from the unresolved flag-3 mapping.
 
 The texture group S is the Gen1 slot used unchanged. That is **not verified**
 against PoR's WALLDEF art. Door flags 2 and 3 have distinct diagnostic labels
-but currently emit the same byte. The per-cell
+(`locked`, status `supported-single-route`; `door3-unresolved`, status
+`provisional`) but currently emit the same byte. Per-rule provenance is in
+`por_map.json` under `edge_mapping_evidence.rules`. Every rule keeps
+`geo_reader_binding: unproven` and `general_rule_proven: false`. The per-cell
 descriptor and zone bits are not written.
 
 ### Coordinate and wall mapping (tested)
 
-Gen1 cell `(x, y)` is OpenUA `cell(col=x, row=y)`. The source edges are named
-N, E, S, W; FRUA's four stored edge bytes are ordered W, S, E, N, so the writer
-reorders them at the format boundary. The entry is
+Under the Gen1 decoder model, source cell `(x, y)` maps to OpenUA
+`cell(col=x, row=y)` and source edge labels are N, E, S, W. The OpenUA
+runtime trace below establishes its target edge order as N/E/S/W; `por_map.py`
+writes the model-labelled values in that order. The entry is
 `set_entry_point(0, row=y, col=x, facing)`. `tests/test_por_map.py` checks that
 the mapping is not transposed and that `Geo.parse(Geo.build())` round-trips.
 
-Two assumptions remain open, and they are not checked by tests. First, the
-facing numbers are taken to be N=0, E=1, S=2, W=3, the same as the edge order.
-Second, OpenUA's engine may consult only one side of a shared edge. The source
-stores both sides, so that choice is OpenUA's. The diagnostics report how often
-the two stored slots agree.
+Entry facings use OpenUA's 3-bit compass codes, not the four edge-order indices:
+N=0, E=2, S=4, W=6 (odd codes are diagonal headings). The engine normalizes 0
+to 8 and uses the direction tables in `jt297`; `jt210` selects the facing edge
+with `(dir & 6) >> 1`. A runtime trace of the test-only flag-2 area exposed two
+old fixture errors: the 0/1/2/3 facing codes sent cardinal labels to diagonal
+headings. Under the Gen1 source-label model, writing W/S/E/N put west at slot 0
+while the engine's west heading reads slot 3. `tools/por_map.py` now writes
+that model's N/E/S/W values in the runtime-verified OpenUA slot order and uses
+the engine's cardinal heading codes. The PoR probe confirms the bit-pair
+selection by numeric direction code but does not independently verify those
+source compass labels. One assumption remains open:
+OpenUA may consult only one side of a shared edge. The source stores both
+sides, so that choice is OpenUA's. The diagnostics report how often the two
+stored slots agree.
 
 ### What the design contains, and what is not claimed
 
