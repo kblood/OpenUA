@@ -80,6 +80,12 @@ cross-checks only; none of them is used as a PoR fact.
   operands. Their handlers also push 3 and 2 to far helpers `2B:2A` and `2B:25`,
   whose targets and stream advances remain unresolved. These facts do not yet define
   the menu framing or assign opcode semantics.
+- **ECL opcode 0x21 dispatch** (`tools/por_ecl_21_dispatch_probe.py`, see
+  [`por-ecl-21-dispatch-probe.md`](por-ecl-21-dispatch-probe.md)). The dispatcher
+  arm has a direct `E8` edge to handler `0x19BA`, which makes eleven far calls.
+  Two are VROOMM stubs under the zero-skew model; the other nine have fixup-listed
+  segment words and remain model-dependent. No GEO target, argument binding, or
+  root reachability is established.
 - **ECL dispatcher cursor (`0x1B`)** (`tools/por_ecl_handler_cursor_probe.py`, see
   [`por-ecl-handler-cursor-probe.md`](por-ecl-handler-cursor-probe.md)). The handler
   increments the cursor once before branching, but one path calls unresolved
@@ -169,6 +175,14 @@ cross-checks only; none of them is used as a PoR fact.
   four sites remain unknown. This removes the stated prototype conflict but does not prove the target
   identity or execution, and the output is not tied to a GEO block. No plane-2 or descriptor-to-event
   mapping is claimed.
+- **Plane-3 door reader branches** (`tools/por_door_reader_branch_probe.py`, see
+  [`por-door-reader-branch-probe.md`](por-door-reader-branch-probe.md)). Under the
+  still-conditional reader identity, one caller gates forward movement on return
+  value `1`; value `0` does not step, while `2/3` depend on unresolved callees.
+  Since `1` is also the reader's default, this does not establish the meaning of
+  the field or justify a door-flag conversion. The separate INT 3F dispatch-entry
+  trace remains unresolved and is documented in
+  [`por-door-ds-entry-probe.md`](por-door-ds-entry-probe.md).
 
 The module is still map-only and unplayable. Area and start mapping are unknown, and
 events, text, art and campaign behaviour are absent.
